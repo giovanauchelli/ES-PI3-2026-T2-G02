@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+//importa somnete o widget MesclaInvestLogo
 import 'splash_screen.dart' show MesclaInvestLogo;
+import '../authentication/login_screen.dart';
+
 
 class InicioScreen extends StatelessWidget {
   const InicioScreen({super.key});
@@ -18,7 +21,10 @@ class InicioScreen extends StatelessWidget {
               const Spacer(flex: 3),
               OutlinedButton(
                 onPressed: () {
-                  // TODO: navegar para login
+                  Navigator.push( // <- adicione isso
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
                 },
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 52),
@@ -29,10 +35,7 @@ class InicioScreen extends StatelessWidget {
                 ),
                 child: const Text(
                   'Entrar',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black87,
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.black87),
                 ),
               ),
               const SizedBox(height: 16),
@@ -60,10 +63,7 @@ class InicioScreen extends StatelessWidget {
                 ),
                 child: const Text(
                   'Criar Conta',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black87,
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.black87),
                 ),
               ),
               const Spacer(),
