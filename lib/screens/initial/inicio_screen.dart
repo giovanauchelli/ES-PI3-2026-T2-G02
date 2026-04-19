@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+//importa somnete o widget MesclaInvestLogo
 import 'splash_screen.dart' show MesclaInvestLogo;
+import '../authentication/login_screen.dart';
+
 
 class InicioScreen extends StatelessWidget {
   const InicioScreen({super.key});
@@ -8,6 +11,8 @@ class InicioScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+
+      //SafeArea evita que o conteudo fique em areas problematicas
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -18,7 +23,10 @@ class InicioScreen extends StatelessWidget {
               const Spacer(flex: 3),
               OutlinedButton(
                 onPressed: () {
-                  // TODO: navegar para login
+                  Navigator.push( // <- adicione isso
+                    context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
                 },
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 52),
@@ -29,12 +37,10 @@ class InicioScreen extends StatelessWidget {
                 ),
                 child: const Text(
                   'Entrar',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black87,
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.black87),
                 ),
               ),
+              //espaço fixo de 16 px entre os elemnetos
               const SizedBox(height: 16),
               Row(
                 children: const [
@@ -60,10 +66,7 @@ class InicioScreen extends StatelessWidget {
                 ),
                 child: const Text(
                   'Criar Conta',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black87,
-                  ),
+                  style: TextStyle(fontSize: 16, color: Colors.black87),
                 ),
               ),
               const Spacer(),
