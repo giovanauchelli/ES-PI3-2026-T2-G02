@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 //importa somnete o widget MesclaInvestLogo
 import 'splash_screen.dart' show MesclaInvestLogo;
 import '../authentication/login_screen.dart';
+import '../authentication/register_screen.dart';
 
 
 class InicioScreen extends StatelessWidget {
@@ -55,6 +56,10 @@ class InicioScreen extends StatelessWidget {
               const SizedBox(height: 16),
               OutlinedButton(
                 onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CadastroScreen()),
+                  );
                   // TODO: navegar para cadastro
                 },
                 style: OutlinedButton.styleFrom(
