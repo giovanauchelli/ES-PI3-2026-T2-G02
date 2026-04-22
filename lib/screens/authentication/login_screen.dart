@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'password_recovery_screen.dart';
+import '../home/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -21,11 +22,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _entrar() {
-    // Lógica de autenticação aqui
-    final email = _emailController.text.trim();
-    final senha = _senhaController.text;
-    debugPrint('Email: $email | Senha: $senha');
-  }
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(builder: (_) => const HomeScreen()),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
