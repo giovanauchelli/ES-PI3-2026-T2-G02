@@ -20,7 +20,10 @@ class InicioScreen extends StatelessWidget {
           child: Column(
             children: [
               const Spacer(flex: 2),
-              const MesclaInvestLogo(),
+              Image.asset(
+                'assets/logo.png',
+                height: MediaQuery.of(context).size.height * 0.15,
+              ),
               const Spacer(flex: 3),
               OutlinedButton(
                 onPressed: () {
