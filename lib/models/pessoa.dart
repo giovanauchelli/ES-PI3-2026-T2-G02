@@ -1,17 +1,14 @@
 class Pessoa {
   String? _cpf;
-  String? _firstName;
-  String? _lastName;
+  String? _fullName;
   DateTime? _dataNascimento;
 
   Pessoa({
     String? cpf,
-    String? firstName,
-    String? lastName,
+    String? fullName,
     DateTime? dataNascimento,
   }) : _cpf = cpf,
-       _firstName = firstName,
-       _lastName = lastName,
+        _fullName = fullName,
        _dataNascimento = dataNascimento;
 
   // Getters

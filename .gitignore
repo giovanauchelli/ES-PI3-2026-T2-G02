@@ -51,3 +51,5 @@ dist/
 package-lock.json
 
 .sixth/
+UML_Classes.txt
+/lib/services

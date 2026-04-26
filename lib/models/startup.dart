@@ -23,15 +23,14 @@ class Startup extends Empresa {
     String? sumarioExecutivo,
     List<String>? membrosConselho,
     List<String>? linksVideos,
-  }) : _descricao = descricao,
-       _estSocietaria = estSocietaria,
-       _cptAportado = cptAportado,
-       _totalTokensEmitidos = totalTokensEmitidos,
-       _estagioDesenvolvimento =
-           estagioDesenvolvimento ?? EstagioDesenvolvimento.nova,
-       _sumarioExecutivo = sumarioExecutivo,
-       _membrosConselho = membrosConselho ?? [],
-       _linksVideos = linksVideos ?? [];
+  })  : _descricao = descricao,
+        _estSocietaria = estSocietaria,
+        _cptAportado = cptAportado,
+        _totalTokensEmitidos = totalTokensEmitidos,
+        _estagioDesenvolvimento = estagioDesenvolvimento ?? EstagioDesenvolvimento.nova,
+        _sumarioExecutivo = sumarioExecutivo,
+        _membrosConselho = membrosConselho ?? [],
+        _linksVideos = linksVideos ?? [];
 
   // Getters
   String? get descricao => _descricao;
@@ -48,8 +47,7 @@ class Startup extends Empresa {
   set estSocietaria(String? value) => _estSocietaria = value;
   set cptAportado(double value) => _cptAportado = value;
   set totalTokensEmitidos(int value) => _totalTokensEmitidos = value;
-  set estagioDesenvolvimento(EstagioDesenvolvimento value) =>
-      _estagioDesenvolvimento = value;
+  set estagioDesenvolvimento(EstagioDesenvolvimento value) => _estagioDesenvolvimento = value;
   set sumarioExecutivo(String? value) => _sumarioExecutivo = value;
   set membrosConselho(List<String> value) => _membrosConselho = value;
   set linksVideos(List<String> value) => _linksVideos = value;
