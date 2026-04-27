@@ -49,3 +49,7 @@ app.*.map.json
 node_modules/
 dist/
 package-lock.json
+
+.sixth/
+UML_Classes.txt
+temp/

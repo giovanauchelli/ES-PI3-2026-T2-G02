@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
-import 'password_recovery_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service.dart';
 import '../home/home_screen.dart';
+import 'password_recovery_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,6 +15,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _senhaController = TextEditingController();
   bool _obscureSenha = true;
+  bool _isLoading = false;
+
+  late final AuthService _authService;
+
+  @override
+  void initState() {
+    super.initState();
+    _authService = AuthService();
+  }
 
   @override
   void dispose() {
@@ -21,12 +32,98 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _entrar() {
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(builder: (_) => const HomeScreen()),
-  );
-}
+  void _entrar() async {
+    final email = _emailController.text.trim();
+    final senha = _senhaController.text;
+
+    // Validação básica
+    if (email.isEmpty || senha.isEmpty) {
+      _mostrarErro('Por favor, preencha todos os campos');
+      return;
+    }
+
+    if (!email.contains('@')) {
+      _mostrarErro('E-mail inválido');
+      return;
+    }
+
+    if (senha.length < 6) {
+      _mostrarErro('A senha deve ter pelo menos 6 caracteres');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final userCredential = await _authService.login(
+        email: email,
+        senha: senha,
+      );
+
+      if (mounted) {
+        _mostrarSucesso('Bem-vindo, ${userCredential.user?.email}!');
+
+        // Navegar para tela inicial após 1.5 segundos
+        await Future.delayed(const Duration(milliseconds: 1500));
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+            (route) => false,
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      String mensagem = 'Erro ao fazer login';
+
+      switch (e.code) {
+        case 'user-not-found':
+          mensagem = 'Usuário não encontrado';
+          break;
+        case 'wrong-password':
+          mensagem = 'Senha incorreta';
+          break;
+        case 'invalid-email':
+          mensagem = 'E-mail inválido';
+          break;
+        case 'user-disabled':
+          mensagem = 'Usuário desativado';
+          break;
+        case 'too-many-requests':
+          mensagem = 'Muitas tentativas. Tente novamente mais tarde';
+          break;
+        default:
+          mensagem = e.message ?? 'Erro desconhecido';
+      }
+
+      _mostrarErro(mensagem);
+    } catch (e) {
+      _mostrarErro('Erro ao fazer login: ${e.toString()}');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _mostrarErro(String mensagem) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensagem),
+        backgroundColor: Colors.red[400],
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _mostrarSucesso(String mensagem) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensagem),
+        backgroundColor: Colors.green[400],
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,10 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 6),
               const Text(
                 'Insira seus dados para começar',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black45,
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.black45),
               ),
               const SizedBox(height: 48),
 
@@ -182,23 +276,23 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 10),
 
               // Esqueceu a senha
-              // DEPOIS
               Align(
                 alignment: Alignment.centerRight,
                 child: GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const RecuperarSenhaScreen()),
-                    );
-                  },
+                  onTap: _isLoading
+                      ? null
+                      : () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const RecuperarSenhaScreen(),
+                            ),
+                          );
+                        },
                   child: RichText(
                     text: const TextSpan(
                       text: 'Esqueceu sua senha? ',
-                      style: TextStyle(
-                        color: Colors.black45,
-                        fontSize: 13,
-                      ),
+                      style: TextStyle(color: Colors.black45, fontSize: 13),
                       children: [
                         TextSpan(
                           text: 'Clique aqui',
@@ -220,21 +314,35 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 50,
                 child: OutlinedButton(
-                  onPressed: _entrar,
+                  onPressed: _isLoading ? null : _entrar,
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.black87, width: 1.5),
+                    side: BorderSide(
+                      color: _isLoading ? Colors.grey : Colors.black87,
+                      width: 1.5,
+                    ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    'Entrar',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
+                  child: _isLoading
+                      ? SizedBox(
+                          height: 24,
+                          width: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.black87,
+                            ),
+                          ),
+                        )
+                      : const Text(
+                          'Entrar',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87,
+                          ),
+                        ),
                 ),
               ),
             ],
