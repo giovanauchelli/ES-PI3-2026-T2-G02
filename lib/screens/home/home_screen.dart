@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../startups/startups_catalog_screen.dart';
+import '../profile/profile_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -115,20 +116,26 @@ class _Header extends StatelessWidget {
             color: Colors.black87,
           ),
         ),
-        Container(
-          width: 42,
-          height: 42,
-          decoration: const BoxDecoration(
-            color: Color(0xFFD1CEFF),
-            shape: BoxShape.circle,
+        GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PerfilScreen()),
           ),
-          alignment: Alignment.center,
-          child: const Text(
-            'AN',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF6C63FF),
+          child: Container(
+            width: 42,
+            height: 42,
+            decoration: const BoxDecoration(
+              color: Color(0xFFD1CEFF),
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: const Text(
+              'AN',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6C63FF),
+              ),
             ),
           ),
         ),
@@ -381,7 +388,7 @@ class _BottomNav extends StatelessWidget {
                       label: 'Startups',
                     ),
                   ),
-                                  _NavItem(icon: Icons.account_balance_wallet_outlined, label: 'Carteira'),
+                _NavItem(icon: Icons.account_balance_wallet_outlined, label: 'Carteira'),
                 _NavItem(icon: Icons.swap_horiz_outlined, label: 'Balcão'),
                 _NavItem(icon: Icons.trending_up_outlined, label: 'DashBoard'),
               ],
