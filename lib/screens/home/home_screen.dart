@@ -388,7 +388,7 @@ class _BottomNav extends StatelessWidget {
                       label: 'Startups',
                     ),
                   ),
-                                  _NavItem(icon: Icons.account_balance_wallet_outlined, label: 'Carteira'),
+                _NavItem(icon: Icons.account_balance_wallet_outlined, label: 'Carteira'),
                 _NavItem(icon: Icons.swap_horiz_outlined, label: 'Balcão'),
                 _NavItem(icon: Icons.trending_up_outlined, label: 'DashBoard'),
               ],

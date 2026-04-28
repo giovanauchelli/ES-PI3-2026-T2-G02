@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../home/home_screen.dart';
+import '../startups/startups_catalog_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -40,7 +42,9 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   // Seta voltar
                   IconButton(
                     icon: const Icon(Icons.arrow_back, color: Colors.black87, size: 22),
-                    onPressed: () => Navigator.maybePop(context),
+                   onPressed: () {
+                      navigateNoAnimation(context, const HomeScreen());
+                    },
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
                     constraints: const BoxConstraints(),
                   ),
@@ -301,17 +305,35 @@ class _BottomNav extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: const [
-              _NavItem(icon: Icons.home_outlined, label: 'Home'),
-              _NavItem(icon: Icons.grid_view_outlined, label: 'Startups'),
+            children: [
               _NavItem(
-                  icon: Icons.account_balance_wallet_outlined,
-                  label: 'Carteira'),
-              _NavItem(icon: Icons.swap_horiz_outlined, label: 'Balcão'),
+                icon: Icons.home_outlined,
+                label: 'Home',
+                onTap: () {
+                  navigateNoAnimation(context, const HomeScreen());
+                },
+              ),
               _NavItem(
-                  icon: Icons.trending_up_outlined, label: 'DashBoard'),
+                icon: Icons.grid_view_outlined,
+                label: 'Startups',
+                onTap: () {
+                  navigateNoAnimation(context, const StartupsScreen());
+                },
+              ),
+              _NavItem(
+                icon: Icons.account_balance_wallet_outlined,
+                label: 'Carteira',
+              ),
+              _NavItem(
+                icon: Icons.swap_horiz_outlined,
+                label: 'Balcão',
+              ),
+              _NavItem(
+                icon: Icons.trending_up_outlined,
+                label: 'DashBoard',
+              ),
             ],
-          ),
+          )
         ),
       ),
     );
@@ -322,25 +344,48 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
+  final VoidCallback? onTap;
 
-  const _NavItem(
-      {required this.icon, required this.label, this.selected = false});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    this.selected = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final color = selected ? const Color(0xFF6C63FF) : Colors.black45;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 24, color: color),
-        const SizedBox(height: 4),
-        Text(label,
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 4),
+          Text(
+            label,
             style: TextStyle(
-                fontSize: 11,
-                color: color,
-                fontWeight:
-                    selected ? FontWeight.w600 : FontWeight.normal)),
-      ],
+              fontSize: 11,
+              color: color,
+              fontWeight:
+                  selected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
+
+void navigateNoAnimation(BuildContext context, Widget page) {
+  Navigator.pushReplacement(
+    context,
+    PageRouteBuilder(
+      pageBuilder: (_, __, ___) => page,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    ),
+  );
 }
