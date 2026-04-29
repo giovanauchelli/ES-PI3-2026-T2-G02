@@ -48,9 +48,10 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  SizedBox(height: 20),
                   // Gradiente
                   Container(
-                    height: 3,
+                    height: 2,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
