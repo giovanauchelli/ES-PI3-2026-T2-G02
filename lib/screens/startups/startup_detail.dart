@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+//importa as abas que serao exibidas dentro do detalhe da startup
 import '../startups/startup_overview.dart';
 import '../startups/startup_society.dart';
 import '../startups/startup_documents.dart';
 import '../startups/startup_questions.dart';
+import '../home/home_screen.dart';
 
+//Tela principal
 class StartupDetalheScreen extends StatefulWidget {
   const StartupDetalheScreen({super.key});
 
@@ -13,16 +16,20 @@ class StartupDetalheScreen extends StatefulWidget {
 
 class _StartupDetalheScreenState extends State<StartupDetalheScreen>
     with SingleTickerProviderStateMixin {
+  
+  //controlador das tabs
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    //inicializa o controller com 4 abas
     _tabController = TabController(length: 4, vsync: this);
   }
 
   @override
   void dispose() {
+    //libera o controller ao sair da pagina
     _tabController.dispose();
     super.dispose();
   }
@@ -33,11 +40,11 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
       backgroundColor: const Color(0xFFF5F5F7),
       body: Column(
         children: [
-          // ── Header fixo ───────────────────────────────────────
+          // Header fixo, nao rola com o conteudo
           Container(
             color: Colors.white,
             child: SafeArea(
-              bottom: false,
+              bottom: false, //eveita espaço em baixo
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -54,21 +61,27 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                       ),
                     ),
                   ),
+
                   // Seta voltar
                   IconButton(
                     icon: const Icon(Icons.arrow_back,
-                        color: Colors.black87, size: 22),
+                        color: Color.fromARGB(221, 0, 0, 0), size: 22),
+
+                    //volta para a tela anterior
                     onPressed: () => Navigator.maybePop(context),
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
                     constraints: const BoxConstraints(),
                   ),
-                  // Nome + tag status
+
+                  // Nome da startup + categoria + status
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+
+                        //nome + segmento
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: const [
@@ -88,6 +101,8 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                             ),
                           ],
                         ),
+
+                        //tag de status da startup
                         Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 12, vertical: 5),
@@ -108,7 +123,8 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // Barra de progresso capital
+
+                  // Barra de progresso de capitação
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Column(
@@ -126,14 +142,32 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                           ],
                         ),
                         const SizedBox(height: 6),
+
+                        //barra de progresso
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
-                          child: const LinearProgressIndicator(
-                            value: 0.72,
-                            minHeight: 6,
-                            backgroundColor: Color(0xFFEEEEEE),
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                Color(0xFF6C63FF)),
+                          child: Stack(
+                            children: [
+                              Container(
+                                height: 5,
+                                color: const Color(0xFFEEEEEE),
+                              ),
+                              FractionallySizedBox(
+                                widthFactor: 0.72, // 72% preenchida
+                                child: Container(
+                                  height: 5,
+                                  decoration: const BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        Color.fromARGB(255, 49, 43, 163),
+                                        Color(0xFFE040FB),
+                                        Color(0xFFFF6B6B),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -170,7 +204,7 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                           child: ElevatedButton(
                             onPressed: () {},
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF1A1A2E),
+                              backgroundColor: const Color.fromARGB(255, 5, 5, 79),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8)),
                               padding:
@@ -258,8 +292,14 @@ class _BottomNav extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: const [
-              _NavItem(icon: Icons.home_outlined, label: 'Home'),
+            children: [
+             _NavItem(
+                icon: Icons.home_outlined,
+                label: 'Home',
+                onTap: () {
+                  navigateNoAnimation(context, const HomeScreen());
+                },
+              ),
               _NavItem(
                   icon: Icons.grid_view_outlined,
                   label: 'Startups',
@@ -282,25 +322,48 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
+  final VoidCallback? onTap;
 
-  const _NavItem(
-      {required this.icon, required this.label, this.selected = false});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    this.selected = false,
+    this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final color = selected ? const Color(0xFF6C63FF) : Colors.black45;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 24, color: color),
-        const SizedBox(height: 4),
-        Text(label,
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 4),
+          Text(
+            label,
             style: TextStyle(
-                fontSize: 11,
-                color: color,
-                fontWeight:
-                    selected ? FontWeight.w600 : FontWeight.normal)),
-      ],
+              fontSize: 11,
+              color: color,
+              fontWeight:
+                  selected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
+
+void navigateNoAnimation(BuildContext context, Widget page) {
+  Navigator.pushReplacement(
+    context,
+    PageRouteBuilder(
+      pageBuilder: (_, __, ___) => page,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+    ),
+  );
 }

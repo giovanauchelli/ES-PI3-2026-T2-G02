@@ -61,7 +61,7 @@ class VisaoGeralTab extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: const BoxDecoration(
-                    color: Color(0xFF6C63FF),
+                    color:   Color.fromARGB(255, 5, 5, 79),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.play_arrow, color: Colors.white, size: 28),
@@ -99,37 +99,43 @@ class _MetricaBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: const TextStyle(fontSize: 11, color: Colors.black45)),
-            const SizedBox(height: 4),
-            Text(valor,
-                style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87)),
-            if (subvalor != null)
-              Text(subvalor!,
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: subColor)),
-          ],
+      child: SizedBox(
+        height: 90, // controla a altura padrão dos cards
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.start, // centraliza melhor
+            children: [
+              Text(label,
+                  style: const TextStyle(fontSize: 14, color: Color.fromARGB(169, 0, 0, 0))),
+              const SizedBox(height: 4),
+              Text(valor,
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87)),
+              if (subvalor != null)
+                Text(subvalor!,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: subColor
+                        )
+                      ),
+            ],
+          ),
         ),
       ),
     );
