@@ -29,6 +29,17 @@ class _CadastroScreenState extends State<CadastroScreen> {
   bool _isLoading = false;
 
   @override
+  void initState() {
+    super.initState();
+    _nomeController.addListener(_atualizarEstadoCampos);
+    _emailController.addListener(_atualizarEstadoCampos);
+    _cpfController.addListener(_atualizarEstadoCampos);
+    _dataNascimentoController.addListener(_atualizarEstadoCampos);
+    _senhaController.addListener(_atualizarEstadoSenhas);
+    _confirmarSenhaController.addListener(_atualizarEstadoSenhas);
+  }
+
+  @override
   void dispose() {
     _nomeController.dispose();
     _emailController.dispose();
@@ -38,6 +49,22 @@ class _CadastroScreenState extends State<CadastroScreen> {
     _senhaController.dispose();
     _confirmarSenhaController.dispose();
     super.dispose();
+  }
+
+  void _atualizarEstadoCampos() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _atualizarEstadoSenhas() {
+    if (_senhaController.text.isEmpty && _confirmarSenhaController.text.isNotEmpty) {
+      _confirmarSenhaController.clear();
+    }
+
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _criarConta() async {
@@ -196,6 +223,29 @@ class _CadastroScreenState extends State<CadastroScreen> {
     return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
   }
 
+  bool _isValidCpf(String value) {
+    final cpf = _somenteDigitos(value);
+
+    if (cpf.length != 11) return false;
+    if (RegExp(r'^(\d)\1{10}$').hasMatch(cpf)) return false;
+
+    int calcularDigito(int length) {
+      var soma = 0;
+      for (int i = 0; i < length; i++) {
+        soma += int.parse(cpf[i]) * ((length + 1) - i);
+      }
+
+      final resto = soma % 11;
+      return resto < 2 ? 0 : 11 - resto;
+    }
+
+    final primeiroDigito = calcularDigito(9);
+    final segundoDigito = calcularDigito(10);
+
+    return cpf[9] == primeiroDigito.toString() &&
+        cpf[10] == segundoDigito.toString();
+  }
+
   String _somenteDigitos(String value) {
     return value.replaceAll(RegExp(r'[^0-9]'), '');
   }
@@ -236,22 +286,68 @@ class _CadastroScreenState extends State<CadastroScreen> {
     return idade >= 18;
   }
 
-  InputDecoration _inputDecoration({required String hint, Widget? suffixIcon}) {
+  bool get _senhaFoiPreenchida => _senhaController.text.isNotEmpty;
+
+  Color? get _corBordaNome {
+    if (_nomeController.text.trim().isEmpty) return null;
+    return Colors.green;
+  }
+
+  Color? get _corBordaEmail {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) return null;
+    return _isValidEmail(email) ? Colors.green : Colors.red;
+  }
+
+  Color? get _corBordaCpf {
+    if (_cpfController.text.trim().isEmpty) return null;
+    return _isValidCpf(_cpfController.text) ? Colors.green : Colors.red;
+  }
+
+  Color? get _corBordaDataNascimento {
+    final textoData = _dataNascimentoController.text.trim();
+    if (textoData.isEmpty) return null;
+
+    final data = _parseDataNascimento(textoData);
+    if (data == null) return Colors.red;
+
+    return _isMaiorDeIdade(data) ? Colors.green : Colors.red;
+  }
+
+  Color? get _corBordaSenhas {
+    if (!_senhaFoiPreenchida || _confirmarSenhaController.text.isEmpty) {
+      return null;
+    }
+
+    return _senhaController.text == _confirmarSenhaController.text
+        ? Colors.green
+        : Colors.red;
+  }
+
+  InputDecoration _inputDecoration({
+    required String hint,
+    Widget? suffixIcon,
+    Color? enabledBorderColor,
+    Color? focusedBorderColor,
+  }) {
+    final borderColor = enabledBorderColor ?? const Color(0xFFE0E0E0);
+    final activeBorderColor = focusedBorderColor ?? enabledBorderColor ?? const Color(0xFF6C63FF);
+
     return InputDecoration(
       hintText: hint,
       hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+        borderSide: BorderSide(color: borderColor),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+        borderSide: BorderSide(color: borderColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.5),
+        borderSide: BorderSide(color: activeBorderColor, width: 1.5),
       ),
       filled: true,
       fillColor: Colors.white,
@@ -326,7 +422,11 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 textCapitalization: TextCapitalization.words,
                 enabled: !_isLoading,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: _inputDecoration(hint: 'Ex: Joao Pedro de Souza'),
+                decoration: _inputDecoration(
+                  hint: 'Ex: Joao Pedro de Souza',
+                  enabledBorderColor: _corBordaNome,
+                  focusedBorderColor: _corBordaNome,
+                ),
               ),
               const SizedBox(height: 20),
               _label('E-mail'),
@@ -335,7 +435,11 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 keyboardType: TextInputType.emailAddress,
                 enabled: !_isLoading,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: _inputDecoration(hint: 'Digite seu e-mail'),
+                decoration: _inputDecoration(
+                  hint: 'Digite seu e-mail',
+                  enabledBorderColor: _corBordaEmail,
+                  focusedBorderColor: _corBordaEmail,
+                ),
               ),
               const SizedBox(height: 20),
               _label('CPF'),
@@ -348,7 +452,11 @@ class _CadastroScreenState extends State<CadastroScreen> {
                   _CpfInputFormatter(),
                 ],
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: _inputDecoration(hint: '000.000.000-00'),
+                decoration: _inputDecoration(
+                  hint: '000.000.000-00',
+                  enabledBorderColor: _corBordaCpf,
+                  focusedBorderColor: _corBordaCpf,
+                ),
               ),
               const SizedBox(height: 20),
               _label('Data de nascimento'),
@@ -361,7 +469,11 @@ class _CadastroScreenState extends State<CadastroScreen> {
                   _DataInputFormatter(),
                 ],
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: _inputDecoration(hint: '01/01/1900'),
+                decoration: _inputDecoration(
+                  hint: '01/01/1900',
+                  enabledBorderColor: _corBordaDataNascimento,
+                  focusedBorderColor: _corBordaDataNascimento,
+                ),
               ),
               const SizedBox(height: 20),
               _label('Telefone'),
@@ -385,6 +497,8 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
                 decoration: _inputDecoration(
                   hint: 'Digite sua senha',
+                  enabledBorderColor: _corBordaSenhas,
+                  focusedBorderColor: _corBordaSenhas,
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureSenha
@@ -405,9 +519,20 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 controller: _confirmarSenhaController,
                 obscureText: _obscureConfirmarSenha,
                 enabled: !_isLoading,
+                readOnly: !_senhaFoiPreenchida,
+                onTap: () {
+                  if (_senhaFoiPreenchida || _isLoading) return;
+
+                  _mostrarMensagem(
+                    'Preencha a senha antes de confirmar.',
+                    isError: true,
+                  );
+                },
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
                 decoration: _inputDecoration(
                   hint: 'Repita sua senha',
+                  enabledBorderColor: _corBordaSenhas,
+                  focusedBorderColor: _corBordaSenhas,
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureConfirmarSenha

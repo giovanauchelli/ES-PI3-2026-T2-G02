@@ -53,3 +53,5 @@ package-lock.json
 .sixth/
 UML_Classes.txt
 temp/
+lib/credential.json
+functions/.runtimeconfig.json

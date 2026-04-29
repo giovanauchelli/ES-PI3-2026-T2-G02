@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../authentication/reset_password.dart';
+import '../../services/password_recovery_service.dart';
+import 'reset_password_screen.dart';
 
 class RecuperarSenhaCodigoScreen extends StatefulWidget {
+  const RecuperarSenhaCodigoScreen({super.key, required this.email});
+
   final String email;
-  const RecuperarSenhaCodigoScreen({super.key, this.email = 'ana@email.com'});
 
   @override
   State<RecuperarSenhaCodigoScreen> createState() =>
@@ -14,9 +16,11 @@ class RecuperarSenhaCodigoScreen extends StatefulWidget {
 
 class _RecuperarSenhaCodigoScreenState
     extends State<RecuperarSenhaCodigoScreen> {
-  static const int _totalDigitos = 5;
+  static const int _totalDigitos = 6;
   static const int _tempoInicial = 50;
 
+  final PasswordRecoveryService _passwordRecoveryService =
+      PasswordRecoveryService();
   final List<TextEditingController> _controllers =
       List.generate(_totalDigitos, (_) => TextEditingController());
   final List<FocusNode> _focusNodes =
@@ -24,13 +28,15 @@ class _RecuperarSenhaCodigoScreenState
 
   int _segundosRestantes = _tempoInicial;
   Timer? _timer;
+  bool _isSendingCode = false;
 
   @override
   void initState() {
     super.initState();
     _iniciarTimer();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _focusNodes[0].requestFocus();
+      await _enviarCodigo(showSuccessMessage: false);
     });
   }
 
@@ -38,6 +44,11 @@ class _RecuperarSenhaCodigoScreenState
     _timer?.cancel();
     setState(() => _segundosRestantes = _tempoInicial);
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+
       if (_segundosRestantes <= 1) {
         t.cancel();
         setState(() => _segundosRestantes = 0);
@@ -56,29 +67,94 @@ class _RecuperarSenhaCodigoScreenState
     setState(() {});
   }
 
-  bool get _codigoCompleto =>
-      _controllers.every((c) => c.text.isNotEmpty);
+  bool get _codigoCompleto => _controllers.every((c) => c.text.isNotEmpty);
+
+  String get _codigoDigitado => _controllers.map((c) => c.text).join();
+
+  Future<void> _enviarCodigo({required bool showSuccessMessage}) async {
+    if (_isSendingCode) return;
+
+    setState(() => _isSendingCode = true);
+
+    try {
+      await _passwordRecoveryService.sendRecoveryCode(email: widget.email);
+      if (!mounted) return;
+
+      if (showSuccessMessage) {
+        _mostrarMensagem(
+          'Um novo codigo de 6 digitos foi enviado para ${widget.email}.',
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      _mostrarMensagem(
+        _mensagemErroEnvio(error),
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingCode = false);
+      }
+    }
+  }
 
   void _redefinirSenha() {
-  if (!_codigoCompleto) return;
-  Navigator.push(
-    context,
-    MaterialPageRoute(builder: (_) => const RedefinirNovaSenhaScreen()),
-  );
-}
+    if (!_codigoCompleto || _isSendingCode) return;
 
-  void _reenviar() {
-    for (final c in _controllers) c.clear();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RedefinirNovaSenhaScreen(
+          email: widget.email,
+          code: _codigoDigitado,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reenviar() async {
+    for (final c in _controllers) {
+      c.clear();
+    }
+
     _focusNodes[0].requestFocus();
     _iniciarTimer();
     setState(() {});
+    await _enviarCodigo(showSuccessMessage: true);
+  }
+
+  void _mostrarMensagem(String mensagem, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensagem),
+        backgroundColor: isError ? Colors.red[400] : Colors.green[400],
+      ),
+    );
+  }
+
+  String _mensagemErroEnvio(Object error) {
+    final texto = error.toString().toLowerCase();
+
+    if (texto.contains('failed-precondition')) {
+      return 'O servico de e-mail ainda nao foi configurado no backend.';
+    }
+
+    if (texto.contains('invalid-argument')) {
+      return 'O e-mail informado e invalido.';
+    }
+
+    return 'Nao foi possivel enviar o codigo agora. Tente novamente.';
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    for (final c in _controllers) c.dispose();
-    for (final f in _focusNodes) f.dispose();
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    for (final f in _focusNodes) {
+      f.dispose();
+    }
     super.dispose();
   }
 
@@ -88,7 +164,6 @@ class _RecuperarSenhaCodigoScreenState
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          // Status bar + gradiente + back
           Container(
             color: Colors.white,
             child: SafeArea(
@@ -96,7 +171,6 @@ class _RecuperarSenhaCodigoScreenState
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Gradiente
                   Container(
                     height: 3,
                     decoration: const BoxDecoration(
@@ -109,10 +183,12 @@ class _RecuperarSenhaCodigoScreenState
                       ),
                     ),
                   ),
-                  // Seta voltar
                   IconButton(
-                    icon: const Icon(Icons.arrow_back,
-                        color: Colors.black87, size: 22),
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Colors.black87,
+                      size: 22,
+                    ),
                     onPressed: () => Navigator.maybePop(context),
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
                     constraints: const BoxConstraints(),
@@ -121,16 +197,12 @@ class _RecuperarSenhaCodigoScreenState
               ),
             ),
           ),
-
-          // Conteúdo
           Expanded(
             child: SingleChildScrollView(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Título
                   const Text(
                     'Recuperar Senha',
                     style: TextStyle(
@@ -147,8 +219,6 @@ class _RecuperarSenhaCodigoScreenState
                   const SizedBox(height: 4),
                   const Divider(color: Color(0xFFEEEEEE)),
                   const SizedBox(height: 16),
-
-                  // Banner info
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
@@ -165,7 +235,8 @@ class _RecuperarSenhaCodigoScreenState
                         ),
                         children: [
                           const TextSpan(
-                              text: 'Enviamos um código de verificação para '),
+                            text: 'Enviamos um codigo de verificacao para ',
+                          ),
                           TextSpan(
                             text: widget.email,
                             style: const TextStyle(
@@ -174,14 +245,13 @@ class _RecuperarSenhaCodigoScreenState
                             ),
                           ),
                           const TextSpan(
-                              text: '. Use-o para redefinir sua senha.'),
+                            text: '. Use-o para redefinir sua senha.',
+                          ),
                         ],
                       ),
                     ),
                   ),
                   const SizedBox(height: 48),
-
-                  // Instrução + timer
                   Center(
                     child: Column(
                       children: [
@@ -197,7 +267,9 @@ class _RecuperarSenhaCodigoScreenState
                         RichText(
                           text: TextSpan(
                             style: const TextStyle(
-                                fontSize: 13, color: Colors.black45),
+                              fontSize: 13,
+                              color: Colors.black45,
+                            ),
                             children: [
                               const TextSpan(text: 'o codigo expira em '),
                               TextSpan(
@@ -214,8 +286,6 @@ class _RecuperarSenhaCodigoScreenState
                     ),
                   ),
                   const SizedBox(height: 24),
-
-                  // Campos de dígito
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: List.generate(
@@ -227,28 +297,17 @@ class _RecuperarSenhaCodigoScreenState
                       ),
                     ),
                   ),
-                  const SizedBox(height: 36),
-
-                  // Não recebeu
-                  const Center(
-                    child: Text(
-                      'Não recebeu? Verifique sua pasta de\nspam ou aguarde alguns minutos',
-                      textAlign: TextAlign.center,
-                      style:
-                          TextStyle(fontSize: 13, color: Colors.black45, height: 1.5),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Botão Redefinir Senha
+                  const SizedBox(height: 180),
                   SizedBox(
                     width: double.infinity,
                     height: 50,
                     child: OutlinedButton(
-                      onPressed: _codigoCompleto ? _redefinirSenha : null,
+                      onPressed: _codigoCompleto && !_isSendingCode
+                          ? _redefinirSenha
+                          : null,
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(
-                          color: _codigoCompleto
+                          color: _codigoCompleto && !_isSendingCode
                               ? Colors.black87
                               : Colors.black26,
                           width: 1.5,
@@ -257,29 +316,52 @@ class _RecuperarSenhaCodigoScreenState
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      child: Text(
-                        'Redefinir Senha',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: _codigoCompleto
-                              ? Colors.black87
-                              : Colors.black38,
-                        ),
+                      child: _isSendingCode
+                          ? SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: const AlwaysStoppedAnimation<Color>(
+                                  Colors.black87,
+                                ),
+                              ),
+                            )
+                          : Text(
+                              'Redefinir Senha',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: _codigoCompleto
+                                    ? Colors.black87
+                                    : Colors.black38,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Center(
+                    child: Text(
+                      'Nao recebeu? Verifique sua pasta de\nspam ou aguarde alguns minutos',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.black45,
+                        height: 1.5,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Reenviar Email
+                  const SizedBox(height: 7),
                   Center(
                     child: GestureDetector(
-                      onTap: _reenviar,
-                      child: const Text(
-                        'Reenviar Email',
+                      onTap: _isSendingCode ? null : _reenviar,
+                      child: Text(
+                        _isSendingCode ? 'Enviando...' : 'Reenviar Email',
                         style: TextStyle(
                           fontSize: 14,
-                          color: Color(0xFF6C63FF),
+                          color: _isSendingCode
+                              ? Colors.black38
+                              : const Color(0xFF6C63FF),
                           fontWeight: FontWeight.w600,
                           decoration: TextDecoration.underline,
                         ),
@@ -296,22 +378,23 @@ class _RecuperarSenhaCodigoScreenState
   }
 }
 
-// ── Caixa de dígito ───────────────────────────────────────────
 class _DigitBox extends StatelessWidget {
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
-
   const _DigitBox({
     required this.controller,
     required this.focusNode,
     required this.onChanged,
   });
 
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+
   @override
   Widget build(BuildContext context) {
+    final hasValue = controller.text.isNotEmpty;
+
     return SizedBox(
-      width: 54,
+      width: 46,
       height: 58,
       child: TextField(
         controller: controller,
@@ -331,16 +414,22 @@ class _DigitBox extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+            borderSide: BorderSide(
+              color: hasValue ? Colors.green : const Color(0xFFDDDDDD),
+            ),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+            borderSide: BorderSide(
+              color: hasValue ? Colors.green : const Color(0xFFDDDDDD),
+            ),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide:
-                const BorderSide(color: Color(0xFF6C63FF), width: 1.5),
+            borderSide: const BorderSide(
+              color: Color(0xFF6C63FF),
+              width: 1.5,
+            ),
           ),
           filled: true,
           fillColor: Colors.white,

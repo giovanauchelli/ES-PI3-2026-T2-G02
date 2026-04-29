@@ -5,5 +5,4 @@ analyzer:
     - node_modules/**
 
 linter:
-
   rules:

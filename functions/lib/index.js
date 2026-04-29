@@ -1,0 +1,415 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.redefinirSenhaComCodigo = exports.solicitarCodigoRecuperacaoSenha = exports.excluirPerfilAoExcluirAuth = exports.registrarUsuario = void 0;
+const node_crypto_1 = require("node:crypto");
+const net = __importStar(require("node:net"));
+const tls = __importStar(require("node:tls"));
+const admin = __importStar(require("firebase-admin"));
+const functions = __importStar(require("firebase-functions/v1"));
+admin.initializeApp();
+const db = admin.firestore();
+const usuariosCollection = db.collection("usuarios");
+const passwordRecoveryCollection = db.collection("passwordRecoveryCodes");
+const recoveryCodeTtlMinutes = 10;
+const recoveryCodeLength = 6;
+exports.registrarUsuario = functions.https.onCall(async (data, context) => {
+    if (!context.auth?.uid) {
+        throw new functions.https.HttpsError("unauthenticated", "Usuario nao autenticado.");
+    }
+    const payload = normalizarPayload(data, context.auth.token.email);
+    const userId = context.auth.uid;
+    await validarCpfDisponivel(payload.cpf, userId);
+    await usuariosCollection.doc(userId).set({
+        ...payload,
+        uid: userId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return {
+        success: true,
+        uid: userId,
+    };
+});
+exports.excluirPerfilAoExcluirAuth = functions.auth
+    .user()
+    .onDelete(async (user) => {
+    await usuariosCollection.doc(user.uid).delete().catch(() => undefined);
+});
+exports.solicitarCodigoRecuperacaoSenha = functions.https.onCall(async (data) => {
+    const email = sanitizeEmail(data.email);
+    const response = {
+        success: true,
+        message: "Se existir uma conta com este e-mail, um codigo de recuperacao foi enviado.",
+    };
+    let user;
+    try {
+        user = await admin.auth().getUserByEmail(email);
+    }
+    catch (error) {
+        if (isAuthUserNotFound(error)) {
+            return response;
+        }
+        throw toHttpsError(error, "Nao foi possivel iniciar a recuperacao de senha.");
+    }
+    const code = generateNumericCode(recoveryCodeLength);
+    const expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + recoveryCodeTtlMinutes * 60 * 1000));
+    await passwordRecoveryCollection.doc(buildRecoveryDocId(email)).set({
+        uid: user.uid,
+        email,
+        codeHash: hashRecoveryCode(email, code),
+        attempts: 0,
+        usedAt: null,
+        expiresAt,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await sendRecoveryCodeEmail({
+        to: email,
+        code,
+        expiresInMinutes: recoveryCodeTtlMinutes,
+    });
+    return response;
+});
+exports.redefinirSenhaComCodigo = functions.https.onCall(async (data) => {
+    const email = sanitizeEmail(data.email);
+    const code = sanitizeRecoveryCode(data.code);
+    const newPassword = sanitizeNewPassword(data.newPassword);
+    const recoveryRef = passwordRecoveryCollection.doc(buildRecoveryDocId(email));
+    const recoverySnapshot = await recoveryRef.get();
+    if (!recoverySnapshot.exists) {
+        throw new functions.https.HttpsError("not-found", "Nenhum codigo de recuperacao foi solicitado para este e-mail.");
+    }
+    const recoveryData = recoverySnapshot.data();
+    const expiresAt = recoveryData?.expiresAt;
+    const usedAt = recoveryData?.usedAt;
+    const storedHash = recoveryData?.codeHash;
+    if (!expiresAt || typeof storedHash !== "string") {
+        throw new functions.https.HttpsError("failed-precondition", "O codigo de recuperacao armazenado esta invalido.");
+    }
+    if (usedAt) {
+        throw new functions.https.HttpsError("failed-precondition", "Este codigo ja foi utilizado.");
+    }
+    if (expiresAt.toDate().getTime() < Date.now()) {
+        throw new functions.https.HttpsError("deadline-exceeded", "O codigo informado expirou. Solicite um novo envio.");
+    }
+    if (storedHash !== hashRecoveryCode(email, code)) {
+        await recoveryRef.set({
+            attempts: admin.firestore.FieldValue.increment(1),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        throw new functions.https.HttpsError("permission-denied", "O codigo informado esta incorreto.");
+    }
+    let user;
+    try {
+        user = await admin.auth().getUserByEmail(email);
+    }
+    catch (error) {
+        throw toHttpsError(error, "Nao foi possivel localizar a conta do usuario.");
+    }
+    await admin.auth().updateUser(user.uid, { password: newPassword });
+    await recoveryRef.set({
+        usedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return {
+        success: true,
+        message: "Senha redefinida com sucesso.",
+    };
+});
+async function validarCpfDisponivel(cpf, userId) {
+    const snapshot = await usuariosCollection
+        .where("cpf", "==", cpf)
+        .limit(1)
+        .get();
+    if (!snapshot.empty && snapshot.docs[0]?.id !== userId) {
+        throw new functions.https.HttpsError("already-exists", "Ja existe um usuario cadastrado com este CPF.");
+    }
+}
+function normalizarPayload(data, emailAutenticado) {
+    const cpf = sanitizeDigits(data.cpf, "CPF");
+    const fullName = sanitizeRequiredString(data.fullName, "Nome completo");
+    const telefone = sanitizeDigits(data.telefone, "Telefone");
+    const senha = hashPassword(sanitizeRequiredString(data.senha, "Senha"));
+    const email = sanitizeEmail(data.email ?? emailAutenticado);
+    const dataNascimento = sanitizeBirthDate(data.dataNascimento);
+    const mfaHabilitado = Boolean(data.mfaHabilitado);
+    const userActive = data.userActive === undefined ? true : Boolean(data.userActive);
+    const userloggedIn = data.userloggedIn === undefined ? true : Boolean(data.userloggedIn);
+    if (cpf.length !== 11) {
+        throw new functions.https.HttpsError("invalid-argument", "CPF invalido.");
+    }
+    if (telefone.length < 10 || telefone.length > 11) {
+        throw new functions.https.HttpsError("invalid-argument", "Telefone invalido.");
+    }
+    if (typeof emailAutenticado === "string" &&
+        emailAutenticado.trim().toLowerCase() !== email) {
+        throw new functions.https.HttpsError("invalid-argument", "O e-mail autenticado difere do payload enviado.");
+    }
+    return {
+        cpf,
+        fullName,
+        dataNascimento,
+        email,
+        senha,
+        telefone,
+        mfaHabilitado,
+        userActive,
+        userloggedIn,
+    };
+}
+function hashPassword(password) {
+    if (password.length < 6) {
+        throw new functions.https.HttpsError("invalid-argument", "A senha deve ter pelo menos 6 caracteres.");
+    }
+    return (0, node_crypto_1.createHash)("sha256").update(password).digest("hex");
+}
+function sanitizeRecoveryCode(value) {
+    const raw = sanitizeRequiredString(value, "Codigo");
+    const digits = raw.replace(/\D/g, "");
+    if (digits.length !== recoveryCodeLength) {
+        throw new functions.https.HttpsError("invalid-argument", `O codigo deve conter ${recoveryCodeLength} digitos.`);
+    }
+    return digits;
+}
+function sanitizeNewPassword(value) {
+    const password = sanitizeRequiredString(value, "Nova senha");
+    if (password.length < 6) {
+        throw new functions.https.HttpsError("invalid-argument", "A nova senha deve ter pelo menos 6 caracteres.");
+    }
+    return password;
+}
+function sanitizeRequiredString(value, fieldName) {
+    if (typeof value != "string") {
+        throw new functions.https.HttpsError("invalid-argument", `${fieldName} obrigatorio.`);
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+        throw new functions.https.HttpsError("invalid-argument", `${fieldName} obrigatorio.`);
+    }
+    return normalized;
+}
+function sanitizeDigits(value, fieldName) {
+    const raw = sanitizeRequiredString(value, fieldName);
+    return raw.replace(/\D/g, "");
+}
+function sanitizeEmail(value) {
+    const email = sanitizeRequiredString(value, "E-mail").toLowerCase();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email)) {
+        throw new functions.https.HttpsError("invalid-argument", "E-mail invalido.");
+    }
+    return email;
+}
+function sanitizeBirthDate(value) {
+    const raw = sanitizeRequiredString(value, "Data de nascimento");
+    const parsedDate = new Date(raw);
+    if (Number.isNaN(parsedDate.getTime()) || parsedDate > new Date()) {
+        throw new functions.https.HttpsError("invalid-argument", "Data de nascimento invalida.");
+    }
+    return admin.firestore.Timestamp.fromDate(parsedDate);
+}
+function buildRecoveryDocId(email) {
+    return (0, node_crypto_1.createHash)("sha256").update(email).digest("hex");
+}
+function hashRecoveryCode(email, code) {
+    return (0, node_crypto_1.createHash)("sha256").update(`${email}:${code}`).digest("hex");
+}
+function generateNumericCode(length) {
+    return Array.from({ length }, () => (0, node_crypto_1.randomInt)(0, 10)).join("");
+}
+function isAuthUserNotFound(error) {
+    return (typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "auth/user-not-found");
+}
+function toHttpsError(error, fallbackMessage) {
+    if (error instanceof functions.https.HttpsError) {
+        return error;
+    }
+    const message = error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : fallbackMessage;
+    return new functions.https.HttpsError("internal", message);
+}
+async function sendRecoveryCodeEmail({ to, code, expiresInMinutes, }) {
+    const smtp = getSmtpConfig();
+    const socket = await connectSmtp(smtp);
+    try {
+        await expectResponse(socket, 220);
+        await sendCommand(socket, `EHLO ${smtp.host}`, 250);
+        await sendCommand(socket, `AUTH LOGIN`, 334);
+        await sendCommand(socket, Buffer.from(smtp.user, "utf8").toString("base64"), 334);
+        await sendCommand(socket, Buffer.from(smtp.pass, "utf8").toString("base64"), 235);
+        await sendCommand(socket, `MAIL FROM:<${smtp.fromEmail}>`, 250);
+        await sendCommand(socket, `RCPT TO:<${to}>`, 250);
+        await sendCommand(socket, "DATA", 354);
+        const message = buildRawEmail({
+            fromEmail: smtp.fromEmail,
+            fromName: smtp.fromName,
+            to,
+            subject: "Codigo de recuperacao de senha",
+            text: [
+                "Voce solicitou a recuperacao da sua senha.",
+                `Seu codigo de verificacao e: ${code}`,
+                `Este codigo expira em ${expiresInMinutes} minutos.`,
+                "Se voce nao solicitou esta alteracao, ignore este e-mail.",
+            ].join("\n"),
+            html: [
+                "<p>Voce solicitou a recuperacao da sua senha.</p>",
+                `<p><strong>Seu codigo de verificacao e: ${code}</strong></p>`,
+                `<p>Este codigo expira em ${expiresInMinutes} minutos.</p>`,
+                "<p>Se voce nao solicitou esta alteracao, ignore este e-mail.</p>",
+            ].join(""),
+        });
+        socket.write(`${escapeSmtpData(message)}\r\n.\r\n`);
+        await expectResponse(socket, 250);
+        await sendCommand(socket, "QUIT", 221);
+    }
+    finally {
+        socket.end();
+    }
+}
+function getSmtpConfig() {
+    const smtp = functions.config().smtp;
+    if (!smtp?.host || !smtp?.user || !smtp?.pass || !smtp?.from_email) {
+        throw new functions.https.HttpsError("failed-precondition", "As credenciais SMTP nao foram configuradas nas Cloud Functions.");
+    }
+    return {
+        host: String(smtp.host),
+        port: Number(smtp.port ?? 465),
+        secure: smtp.secure === undefined ? true : String(smtp.secure) === "true",
+        user: String(smtp.user),
+        pass: String(smtp.pass),
+        fromEmail: String(smtp.from_email),
+        fromName: String(smtp.from_name ?? "Mescla Invest"),
+    };
+}
+async function connectSmtp(smtp) {
+    return await new Promise((resolve, reject) => {
+        const onError = (error) => reject(error);
+        if (smtp.secure) {
+            const socket = tls.connect({
+                host: smtp.host,
+                port: smtp.port,
+                servername: smtp.host,
+            }, () => resolve(socket));
+            socket.on("error", onError);
+            return;
+        }
+        const socket = net.connect({
+            host: smtp.host,
+            port: smtp.port,
+        }, () => resolve(socket));
+        socket.on("error", onError);
+    });
+}
+async function sendCommand(socket, command, expectedCode) {
+    socket.write(`${command}\r\n`);
+    await expectResponse(socket, expectedCode);
+}
+async function expectResponse(socket, expectedCode) {
+    const response = await readSmtpResponse(socket);
+    if (response.code !== expectedCode) {
+        throw new Error(`SMTP respondeu com ${response.code} quando ${expectedCode} era esperado: ${response.message}`);
+    }
+}
+async function readSmtpResponse(socket) {
+    return await new Promise((resolve, reject) => {
+        let buffer = "";
+        const cleanup = () => {
+            socket.off("data", onData);
+            socket.off("error", onError);
+            socket.off("close", onClose);
+        };
+        const onError = (error) => {
+            cleanup();
+            reject(error);
+        };
+        const onClose = () => {
+            cleanup();
+            reject(new Error("Conexao SMTP encerrada inesperadamente."));
+        };
+        const onData = (chunk) => {
+            buffer += chunk.toString();
+            const lines = buffer.split(/\r?\n/).filter(Boolean);
+            if (lines.length === 0) {
+                return;
+            }
+            const lastLine = lines[lines.length - 1];
+            const match = lastLine.match(/^(\d{3})([ -])(.*)$/);
+            if (!match || match[2] !== " ") {
+                return;
+            }
+            cleanup();
+            resolve({
+                code: Number(match[1]),
+                message: lines.join("\n"),
+            });
+        };
+        socket.on("data", onData);
+        socket.on("error", onError);
+        socket.on("close", onClose);
+    });
+}
+function buildRawEmail({ fromEmail, fromName, to, subject, text, html, }) {
+    const boundary = `mescla-${Date.now()}`;
+    return [
+        `From: ${fromName} <${fromEmail}>`,
+        `To: <${to}>`,
+        `Subject: ${subject}`,
+        "MIME-Version: 1.0",
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        "",
+        `--${boundary}`,
+        "Content-Type: text/plain; charset=UTF-8",
+        "Content-Transfer-Encoding: 8bit",
+        "",
+        text,
+        `--${boundary}`,
+        "Content-Type: text/html; charset=UTF-8",
+        "Content-Transfer-Encoding: 8bit",
+        "",
+        html,
+        `--${boundary}--`,
+    ].join("\r\n");
+}
+function escapeSmtpData(message) {
+    return message
+        .replace(/\r?\n/g, "\r\n")
+        .replace(/^\./gm, "..");
+}
+//# sourceMappingURL=index.js.map

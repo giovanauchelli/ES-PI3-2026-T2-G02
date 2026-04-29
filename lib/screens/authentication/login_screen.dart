@@ -23,6 +23,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _authService = AuthService();
+    _emailController.addListener(_atualizarEstadoCampos);
+    _senhaController.addListener(_atualizarEstadoCampos);
   }
 
   @override
@@ -30,6 +32,12 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _senhaController.dispose();
     super.dispose();
+  }
+
+  void _atualizarEstadoCampos() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _entrar() async {
@@ -42,7 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    if (!email.contains('@')) {
+    if (!_isValidEmail(email)) {
       _mostrarErro('E-mail inválido');
       return;
     }
@@ -61,7 +69,14 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (mounted) {
-        _mostrarSucesso('Bem-vindo, ${userCredential.user?.email}!');
+        final uid = userCredential.user?.uid;
+        final nomeUsuario = uid == null
+            ? null
+            : await _authService.getUserDisplayName(uid);
+
+        _mostrarSucesso(
+          nomeUsuario == null ? 'Bem-vindo!' : 'Bem-vindo, $nomeUsuario!',
+        );
 
         // Navegar para tela inicial após 1.5 segundos
         await Future.delayed(const Duration(milliseconds: 1500));
@@ -122,6 +137,46 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: Colors.green[400],
         duration: const Duration(seconds: 2),
       ),
+    );
+  }
+
+  bool _isValidEmail(String value) {
+    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
+  }
+
+
+  InputDecoration _inputDecoration({
+    required String hint,
+    Widget? suffixIcon,
+    Color? enabledBorderColor,
+    Color? focusedBorderColor,
+  }) {
+    final borderColor = enabledBorderColor ?? const Color(0xFFE0E0E0);
+    final activeBorderColor =
+        focusedBorderColor ?? enabledBorderColor ?? const Color(0xFF6C63FF);
+
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 14,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: borderColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: borderColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide(color: activeBorderColor, width: 1.5),
+      ),
+      filled: true,
+      fillColor: Colors.white,
+      suffixIcon: suffixIcon,
     );
   }
 
@@ -187,34 +242,10 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
+                enabled: !_isLoading,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: InputDecoration(
-                  hintText: 'seu_email@dominio.com',
-                  hintStyle: const TextStyle(
-                    color: Colors.black38,
-                    fontSize: 14,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6C63FF),
-                      width: 1.5,
-                    ),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
+                decoration: _inputDecoration(
+                  hint: 'seu_email@dominio.com',
                 ),
               ),
               const SizedBox(height: 20),
@@ -232,34 +263,10 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _senhaController,
                 obscureText: _obscureSenha,
+                enabled: !_isLoading,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: InputDecoration(
-                  hintText: 'Digite a sua senha',
-                  hintStyle: const TextStyle(
-                    color: Colors.black38,
-                    fontSize: 14,
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF6C63FF),
-                      width: 1.5,
-                    ),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
+                decoration: _inputDecoration(
+                  hint: 'Digite a sua senha',
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureSenha
@@ -268,8 +275,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: Colors.black38,
                       size: 20,
                     ),
-                    onPressed: () =>
-                        setState(() => _obscureSenha = !_obscureSenha),
+                    onPressed: _isLoading
+                        ? null
+                        : () => setState(() => _obscureSenha = !_obscureSenha),
                   ),
                 ),
               ),
@@ -282,10 +290,20 @@ class _LoginScreenState extends State<LoginScreen> {
                   onTap: _isLoading
                       ? null
                       : () {
+                          final email = _emailController.text.trim().toLowerCase();
+
+                          if (!_isValidEmail(email)) {
+                            _mostrarErro(
+                              'Informe um e-mail valido para recuperar a senha',
+                            );
+                            return;
+                          }
+
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const RecuperarSenhaCodigoScreen(),
+                              builder: (_) =>
+                                  RecuperarSenhaCodigoScreen(email: email),
                             ),
                           );
                         },

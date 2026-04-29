@@ -294,6 +294,8 @@ class _DigitBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasValue = controller.text.isNotEmpty;
+
     return SizedBox(
       width: 52,
       height: 58,
@@ -321,13 +323,17 @@ class _DigitBox extends StatelessWidget {
           //bordas da caixinha
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+            borderSide: BorderSide(
+              color: hasValue ? Colors.green : const Color(0xFFDDDDDD),
+            ),
           ),
 
           //borda quando NÃO esta selecionado
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
+            borderSide: BorderSide(
+              color: hasValue ? Colors.green : const Color(0xFFDDDDDD),
+            ),
           ),
           
           //borda quando o usuario clica na caixa

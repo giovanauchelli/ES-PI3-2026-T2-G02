@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'screens/initial/splash_screen.dart';
+//import 'screens/authentication/reset_password_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +17,11 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: const SplashScreen(),
+      home: SplashScreen(),
+      // home: const RedefinirNovaSenhaScreen(
+      //   email: "p.chvr.commerce2208@gmail.com",
+      //   code: "123456",
+      // ),
     );
   }
 }
