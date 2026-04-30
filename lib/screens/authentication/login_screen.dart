@@ -12,10 +12,15 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
+  static const int _maxTentativasSenha = 5;
+  static const Duration _duracaoBloqueio = Duration(minutes: 5);
+
   final _emailController = TextEditingController();
   final _senhaController = TextEditingController();
   bool _obscureSenha = true;
   bool _isLoading = false;
+  int _tentativasSenhaInvalidas = 0;
+  DateTime? _bloqueadoAte;
 
   late final AuthService _authService;
 
@@ -40,7 +45,46 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  bool get _loginBloqueado {
+    final bloqueadoAte = _bloqueadoAte;
+    if (bloqueadoAte == null) return false;
+
+    if (DateTime.now().isAfter(bloqueadoAte)) {
+      _bloqueadoAte = null;
+      _tentativasSenhaInvalidas = 0;
+      return false;
+    }
+
+    return true;
+  }
+
+  bool _isErroSenha(String errorCode) {
+    return errorCode == 'wrong-password' ||
+        errorCode == 'invalid-credential' ||
+        errorCode == 'invalid-login-credentials';
+  }
+
+  void _registrarTentativaSenhaInvalida() {
+    _tentativasSenhaInvalidas++;
+
+    if (_tentativasSenhaInvalidas >= _maxTentativasSenha) {
+      _bloqueadoAte = DateTime.now().add(_duracaoBloqueio);
+    }
+  }
+
+  void _resetarControleTentativas() {
+    _tentativasSenhaInvalidas = 0;
+    _bloqueadoAte = null;
+  }
+
   void _entrar() async {
+    if (_loginBloqueado) {
+      _mostrarErro(
+        'Acesso temporariamente bloqueado por seguranca. Tente novamente mais tarde.',
+      );
+      return;
+    }
+
     final email = _emailController.text.trim();
     final senha = _senhaController.text;
 
@@ -69,6 +113,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (mounted) {
+        setState(_resetarControleTentativas);
         final uid = userCredential.user?.uid;
         final nomeUsuario = uid == null
             ? null
@@ -89,13 +134,26 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on FirebaseAuthException catch (e) {
       String mensagem = 'Erro ao fazer login';
+      final erroSenha = _isErroSenha(e.code);
+
+      if (erroSenha) {
+        setState(_registrarTentativaSenhaInvalida);
+      }
 
       switch (e.code) {
         case 'user-not-found':
           mensagem = 'Usuário não encontrado';
           break;
         case 'wrong-password':
-          mensagem = 'Senha incorreta';
+        case 'invalid-credential':
+        case 'invalid-login-credentials':
+          if (_loginBloqueado) {
+            mensagem =
+                'Acesso temporariamente bloqueado por seguranca. Tente novamente mais tarde.';
+          } else {
+            mensagem =
+                'Nao foi possivel autenticar com as credenciais informadas.';
+          }
           break;
         case 'invalid-email':
           mensagem = 'E-mail inválido';
@@ -332,7 +390,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 width: double.infinity,
                 height: 50,
                 child: OutlinedButton(
-                  onPressed: _isLoading ? null : _entrar,
+                  onPressed: _isLoading || _loginBloqueado ? null : _entrar,
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
                       color: _isLoading ? Colors.grey : Colors.black87,
@@ -353,8 +411,10 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         )
-                      : const Text(
-                          'Entrar',
+                      : Text(
+                          _loginBloqueado
+                              ? 'Bloqueado temporariamente'
+                              : 'Entrar',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
