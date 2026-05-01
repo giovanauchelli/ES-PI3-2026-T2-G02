@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import '../home/home_screen.dart';
-import '../startups/startups_catalog_screen.dart';
+
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
