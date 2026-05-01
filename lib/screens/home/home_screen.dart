@@ -9,7 +9,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
       body: SafeArea(
         child: Column(
           children: [
@@ -290,7 +290,7 @@ class _AtualizacaoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color:Color.fromARGB(255, 248, 248, 253),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -391,7 +391,7 @@ class AppBottomNav extends StatelessWidget {
     return BottomNavigationBar(
       currentIndex: currentIndex,
       onTap: (index) => _navigate(context, index),
-      selectedItemColor: const Color(0xFF6C63FF),
+      selectedItemColor: const Color.fromARGB(255, 5, 0, 91),
       unselectedItemColor: Colors.black45,
       type: BottomNavigationBarType.fixed,
       items: const [

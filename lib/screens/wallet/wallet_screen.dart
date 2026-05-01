@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../home/home_screen.dart';
+import '../wallet/add_balance.dart';
 
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
@@ -112,7 +113,14 @@ class WalletScreen extends StatelessWidget {
                     width: double.infinity,
                     height: 50,
                     child: OutlinedButton(
-                      onPressed: () {},
+                      onPressed: () => Navigator.push(
+                        context,
+                        PageRouteBuilder(
+                          pageBuilder: (_, __, ___) => const AdicionarSaldoScreen(),
+                          transitionDuration: Duration.zero,
+                          reverseTransitionDuration: Duration.zero,
+                        ),
+                      ),
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Color.fromARGB(79, 0, 0, 0)),
                         shape: RoundedRectangleBorder(
