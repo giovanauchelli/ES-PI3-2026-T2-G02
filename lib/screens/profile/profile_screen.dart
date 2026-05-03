@@ -26,15 +26,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Linha gradiente
+                  SizedBox(height: 20),
                   Container(
-                    height: 3,
+                    height: 2,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [
-                          Color(0xFF6C63FF),
-                          Color(0xFFE040FB),
-                          Color(0xFFFF6B6B),
-                        ],
+                        colors: [Color(0xFF6C63FF), Color(0xFFE040FB), Color(0xFFFF6B6B)],
                       ),
                     ),
                   ),

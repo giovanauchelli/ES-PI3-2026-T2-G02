@@ -3,6 +3,7 @@ import '../startups/startups_catalog_screen.dart';
 import '../profile/profile_screen.dart';
 import '../wallet/wallet_screen.dart';
 import '../balcao/balcao_screen.dart';
+import '../dashboard/dashboard_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -377,6 +378,10 @@ class AppBottomNav extends StatelessWidget {
         break;
       case 3:
         screen = const BalcaoScreen();
+        break;
+      case 4:
+        screen = const DashboardScreen();
+        break;
       default:
         return;
     }
