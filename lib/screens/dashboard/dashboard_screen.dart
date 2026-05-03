@@ -9,8 +9,13 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with SingleTickerProviderStateMixin {
   int _selectedPeriodIndex = 0;
+
+  // Inicializa com valor padrão seguro — evita LateInitializationError
+  AnimationController? _chartController;
+  Animation<double> _chartAnimation = const AlwaysStoppedAnimation(0.0);
 
   final List<String> _periods = ['1 dia', '7 dias', '1 mês', '6 meses', 'YTD'];
 
@@ -28,6 +33,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
       'change': '+8,2%',
     },
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _chartController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _chartAnimation = CurvedAnimation(
+      parent: _chartController!,
+      curve: Curves.easeInOut,
+    );
+    // Garante que a tela já renderizou antes de iniciar a animação
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _chartController?.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _chartController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,23 +152,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onTap: () => setState(() => _selectedPeriodIndex = index),
             child: Container(
               margin: const EdgeInsets.only(right: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFF1565C0) : Colors.transparent,
-                borderRadius: BorderRadius.circular(20),
+                color: isSelected ? const Color(0xFFD7DEEC) : Colors.white,
+                borderRadius: BorderRadius.circular(50),
                 border: Border.all(
                   color: isSelected
-                      ? const Color(0xFF1565C0)
-                      : Colors.grey.shade400,
+                      ? const Color(0xFF234794)
+                      : const Color(0xFFDDDDDD),
                   width: 1,
                 ),
               ),
               child: Text(
                 _periods[index],
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: isSelected ? Colors.white : Colors.black54,
+                  color: isSelected
+                      ? const Color(0xFF000141)
+                      : Colors.black54,
                 ),
               ),
             ),
@@ -186,12 +216,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F8FD),
+        color: const Color(0xFFFAFAFC),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFEAEAF0),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
             offset: const Offset(0, 2),
           ),
         ],
@@ -228,41 +262,34 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Widget _buildChart() {
     return Container(
-      height: 160,
+      height: 200,
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F8FD),
+        color: const Color.fromARGB(255, 253, 253, 255),
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFE0E0E0),
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: 12,
-            right: 14,
-            child: const Text(
-              'R\$ 7.150',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-            child: CustomPaint(
-              painter: _LineChartPainter(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedBuilder(
+          animation: _chartAnimation,
+          builder: (context, _) {
+            return CustomPaint(
+              painter: _LineChartPainter(progress: _chartAnimation.value),
               child: const SizedBox.expand(),
-            ),
-          ),
-        ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -320,46 +347,118 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-// ── Gráfico de linha com gradiente ────────────────────────────
+// ── Gráfico de linha com animação, grid e gradiente ───────────
 class _LineChartPainter extends CustomPainter {
+  final double progress;
+
+  _LineChartPainter({required this.progress});
+
   @override
   void paint(Canvas canvas, Size size) {
-    final List<Offset> points = [
-      Offset(0, size.height * 0.88),
-      Offset(size.width * 0.10, size.height * 0.85),
-      Offset(size.width * 0.18, size.height * 0.80),
-      Offset(size.width * 0.28, size.height * 0.78),
-      Offset(size.width * 0.38, size.height * 0.72),
-      Offset(size.width * 0.48, size.height * 0.65),
-      Offset(size.width * 0.58, size.height * 0.55),
-      Offset(size.width * 0.68, size.height * 0.42),
-      Offset(size.width * 0.80, size.height * 0.28),
-      Offset(size.width * 0.90, size.height * 0.18),
-      Offset(size.width, size.height * 0.08),
+    const double paddingLeft = 12;
+    const double paddingRight = 70;
+    const double paddingTop = 24;
+    const double paddingBottom = 12;
+
+    final chartW = size.width - paddingLeft - paddingRight;
+    final chartH = size.height - paddingTop - paddingBottom;
+
+    // ── Grid lines horizontais ──────────────────────────
+    final gridPaint = Paint()
+      ..color = const Color.fromARGB(255, 236, 236, 241)
+      ..strokeWidth = 1.0
+      ..style = PaintingStyle.stroke;
+
+    const int gridLines = 4;
+    for (int i = 0; i <= gridLines; i++) {
+      final y = paddingTop + chartH * i / gridLines;
+      canvas.drawLine(
+        Offset(paddingLeft, y),
+        Offset(paddingLeft + chartW, y),
+        gridPaint,
+      );
+    }
+
+    // ── Pontos normalizados ─────────────────────────────
+    final rawPoints = [
+      const Offset(0.00, 0.88),
+      const Offset(0.07, 0.86),
+      const Offset(0.13, 0.83),
+      const Offset(0.20, 0.80),
+      const Offset(0.27, 0.77),
+      const Offset(0.33, 0.74),
+      const Offset(0.40, 0.70),
+      const Offset(0.47, 0.66),
+      const Offset(0.53, 0.61),
+      const Offset(0.60, 0.55),
+      const Offset(0.67, 0.48),
+      const Offset(0.73, 0.42),
+      const Offset(0.80, 0.34),
+      const Offset(0.87, 0.25),
+      const Offset(0.93, 0.17),
+      const Offset(1.00, 0.08),
     ];
 
-    // Linha suavizada
+    final points = rawPoints
+        .map((p) => Offset(
+              paddingLeft + p.dx * chartW,
+              paddingTop + p.dy * chartH,
+            ))
+        .toList();
+
+    // ── Calcula até onde desenhar com base no progress ──
+    final totalSegments = points.length - 1;
+    final double clampedProgress = progress.clamp(0.0, 1.0);
+    final currentSegment =
+        (clampedProgress * totalSegments).floor().clamp(0, totalSegments - 1);
+    final segmentProgress = (clampedProgress * totalSegments) - currentSegment;
+
     final linePath = Path();
     linePath.moveTo(points[0].dx, points[0].dy);
-    for (int i = 1; i < points.length; i++) {
+
+    for (int i = 1; i <= totalSegments; i++) {
       final prev = points[i - 1];
       final curr = points[i];
       final cx = (prev.dx + curr.dx) / 2;
-      linePath.cubicTo(cx, prev.dy, cx, curr.dy, curr.dx, curr.dy);
+
+      if (i < currentSegment + 1) {
+        // Segmento completo
+        linePath.cubicTo(cx, prev.dy, cx, curr.dy, curr.dx, curr.dy);
+      } else if (i == currentSegment + 1) {
+        // Segmento parcial
+        final t = clampedProgress >= 1.0 ? 1.0 : segmentProgress;
+        final endX = prev.dx + (curr.dx - prev.dx) * t;
+        final endY = prev.dy + (curr.dy - prev.dy) * t;
+        linePath.cubicTo(cx, prev.dy, cx, endY, endX, endY);
+        break;
+      }
     }
 
-    // Preenchimento com gradiente
+    // Ponto animado atual
+    final Offset animatedEnd;
+    if (clampedProgress >= 1.0) {
+      animatedEnd = points.last;
+    } else {
+      final prev = points[currentSegment];
+      final curr = points[currentSegment + 1];
+      animatedEnd = Offset(
+        prev.dx + (curr.dx - prev.dx) * segmentProgress,
+        prev.dy + (curr.dy - prev.dy) * segmentProgress,
+      );
+    }
+
+    // Preenchimento gradiente
     final fillPath = Path()..addPath(linePath, Offset.zero);
-    fillPath.lineTo(points.last.dx, size.height);
-    fillPath.lineTo(points.first.dx, size.height);
+    fillPath.lineTo(animatedEnd.dx, paddingTop + chartH);
+    fillPath.lineTo(points.first.dx, paddingTop + chartH);
     fillPath.close();
 
     final fillPaint = Paint()
       ..shader = ui.Gradient.linear(
-        Offset(0, 0),
-        Offset(0, size.height),
+        Offset(0, paddingTop),
+        Offset(0, paddingTop + chartH),
         [
-          const Color(0xFFE91E8C).withOpacity(0.28),
+          const Color(0xFFE91E8C).withOpacity(0.25),
           const Color(0xFFE91E8C).withOpacity(0.02),
         ],
       );
@@ -376,14 +475,31 @@ class _LineChartPainter extends CustomPainter {
 
     canvas.drawPath(linePath, linePaint);
 
-    // Ponto final
+    // Ponto animado na ponta
     canvas.drawCircle(
-      points.last,
-      4,
+      animatedEnd,
+      5,
       Paint()..color = const Color(0xFFAD1457),
     );
+
+    // Label aparece só quando a animação termina
+    if (clampedProgress >= 1.0) {
+      const labelStyle = TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        color: Colors.black87,
+      );
+      final tp = TextPainter(
+        text: const TextSpan(text: 'R\$ 7.150', style: labelStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(animatedEnd.dx + 8, animatedEnd.dy - tp.height / 2),
+      );
+    }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(_LineChartPainter old) => old.progress != progress;
 }
