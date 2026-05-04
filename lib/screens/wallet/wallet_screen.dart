@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../home/home_screen.dart';
-import '../wallet/add_balance.dart';
+import 'deposit_screen.dart';
 
 class WalletScreen extends StatelessWidget {
   const WalletScreen({super.key});
