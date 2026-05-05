@@ -40,6 +40,10 @@ dependencies:
   firebase_auth: ^6.4.0
   cloud_functions: ^6.0.4
   google_sign_in: ^7.2.0
+  fl_chart: ^1.2.0
+  otp: ^3.2.0
+  base32: ^2.2.0
+  qr_flutter: ^4.1.0
 
 dev_dependencies:
   flutter_test:

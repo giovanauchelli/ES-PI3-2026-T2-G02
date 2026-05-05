@@ -5,6 +5,8 @@ import '../startups/startup_society.dart';
 import '../startups/startup_documents.dart';
 import '../startups/startup_questions.dart';
 import '../home/home_screen.dart';
+import '../balcao/balcao_screen.dart';
+
 
 //Tela principal
 class StartupDetalheScreen extends StatefulWidget {
@@ -25,6 +27,7 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
     super.initState();
     //inicializa o controller com 4 abas
     _tabController = TabController(length: 4, vsync: this);
+    
   }
 
   @override
@@ -49,20 +52,7 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(height: 20),
-                  // Gradiente
-                  Container(
-                    height: 2,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Color(0xFF6C63FF),
-                          Color(0xFFE040FB),
-                          Color(0xFFFF6B6B),
-                        ],
-                      ),
-                    ),
-                  ),
-
+                  
                   // Seta voltar
                   IconButton(
                     icon: const Icon(Icons.arrow_back,
@@ -98,7 +88,7 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                             Text(
                               'Agritech - IoT - Sensores',
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.black45),
+                                  fontSize: 13, color: Colors.black45),
                             ),
                           ],
                         ),
@@ -136,10 +126,10 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                           children: const [
                             Text('Capital captado',
                                 style: TextStyle(
-                                    fontSize: 11, color: Colors.black45)),
+                                    fontSize: 12, color: Colors.black45)),
                             Text('R\$ 180K / 250K',
                                 style: TextStyle(
-                                    fontSize: 11, color: Colors.black45)),
+                                    fontSize: 12, color: Colors.black45)),
                           ],
                         ),
                         const SizedBox(height: 6),
@@ -158,13 +148,7 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                                 child: Container(
                                   height: 5,
                                   decoration: const BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        Color.fromARGB(255, 49, 43, 163),
-                                        Color(0xFFE040FB),
-                                        Color(0xFFFF6B6B),
-                                      ],
-                                    ),
+                                  color:  Color.fromARGB(143, 26, 34, 126),
                                   ),
                                 ),
                               ),
@@ -182,9 +166,16 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                       children: [
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: () {},
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const BalcaoScreen(abaInicial: 0),
+                                ),
+                              );
+                            },
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Colors.black26),
+                              side: const BorderSide(color:  Color(0xFF1A237E)),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8)),
                               padding:
@@ -195,7 +186,7 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                               style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: Colors.black87,
+                                color:  Color(0xFF1A237E),
                               ),
                             ),
                           ),
@@ -203,9 +194,16 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                         const SizedBox(width: 10),
                         Expanded(
                           child: ElevatedButton(
-                            onPressed: () {},
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const BalcaoScreen(abaInicial: 1),
+                                ),
+                              );
+                            },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color.fromARGB(255, 5, 5, 79),
+                              backgroundColor:  Color(0xFF1A237E),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8)),
                               padding:
@@ -233,9 +231,9 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                         fontSize: 13, fontWeight: FontWeight.w600),
                     unselectedLabelStyle:
                         const TextStyle(fontSize: 13),
-                    labelColor: const Color(0xFF6C63FF),
+                    labelColor:  Color(0xFF1A237E),
                     unselectedLabelColor: Colors.black45,
-                    indicatorColor: const Color(0xFF6C63FF),
+                    indicatorColor: Color.fromARGB(143, 26, 34, 126),
                     indicatorWeight: 2,
                     tabs: const [
                       Tab(text: 'Visão Geral'),
@@ -263,108 +261,10 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
           ),
 
           // ── Bottom Nav ────────────────────────────────────────
-          const _BottomNav(),
         ],
       ),
+      bottomNavigationBar: const AppBottomNav(currentIndex: 1),
     );
   }
 }
 
-// ── Bottom Navigation ─────────────────────────────────────────
-class _BottomNav extends StatelessWidget {
-  const _BottomNav();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.07),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-             _NavItem(
-                icon: Icons.home_outlined,
-                label: 'Home',
-                onTap: () {
-                  navigateNoAnimation(context, const HomeScreen());
-                },
-              ),
-              _NavItem(
-                  icon: Icons.grid_view_outlined,
-                  label: 'Startups',
-                  selected: true),
-              _NavItem(
-                  icon: Icons.account_balance_wallet_outlined,
-                  label: 'Carteira'),
-              _NavItem(icon: Icons.swap_horiz_outlined, label: 'Balcão'),
-              _NavItem(
-                  icon: Icons.trending_up_outlined, label: 'DashBoard'),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? const Color(0xFF6C63FF) : Colors.black45;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 24, color: color),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: color,
-              fontWeight:
-                  selected ? FontWeight.w600 : FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-void navigateNoAnimation(BuildContext context, Widget page) {
-  Navigator.pushReplacement(
-    context,
-    PageRouteBuilder(
-      pageBuilder: (_, __, ___) => page,
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero,
-    ),
-  );
-}

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
+
 import '../../services/auth_service.dart';
 import '../home/home_screen.dart';
 import '../initial/splash_screen.dart';
-import '../startups/startups_catalog_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -12,7 +12,7 @@ class PerfilScreen extends StatefulWidget {
 }
 
 class _PerfilScreenState extends State<PerfilScreen> {
-  bool _2faativado = false;
+  bool _2faAtivado = false;
   final AuthService _authService = AuthService();
 
   @override
@@ -21,7 +21,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
       backgroundColor: const Color.fromARGB(255, 255, 255, 255),
       body: Column(
         children: [
-          // ── Status bar area + gradiente + header ──
           Container(
             color: Colors.white,
             child: SafeArea(
@@ -29,9 +28,9 @@ class _PerfilScreenState extends State<PerfilScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Linha gradiente
+                  const SizedBox(height: 20),
                   Container(
-                    height: 3,
+                    height: 2,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
@@ -42,12 +41,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
                       ),
                     ),
                   ),
-                  // Seta voltar
                   IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.black87, size: 22),
-                   onPressed: () {
-                      navigateNoAnimation(context, const HomeScreen());
-                    },
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Colors.black87,
+                      size: 22,
+                    ),
+                    onPressed: () => Navigator.pop(context),
                     padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
                     constraints: const BoxConstraints(),
                   ),
@@ -66,13 +66,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
               ),
             ),
           ),
-
-          // ── Conteúdo rolável ──
           Expanded(
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  // Avatar + nome + email
                   Container(
                     width: double.infinity,
                     color: Colors.white,
@@ -117,8 +114,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
-
-                  // ── Dados Da conta ──
                   Container(
                     width: double.infinity,
                     color: Colors.white,
@@ -138,14 +133,16 @@ class _PerfilScreenState extends State<PerfilScreen> {
                         ),
                         const Divider(height: 1, color: Color(0xFFEEEEEE)),
                         _LinhaInfo(label: 'Nome Completo', valor: 'Ana Souza'),
-                        const Divider(height: 1, indent: 16, color: Color(0xFFEEEEEE)),
+                        const Divider(
+                          height: 1,
+                          indent: 16,
+                          color: Color(0xFFEEEEEE),
+                        ),
                         _LinhaInfo(label: 'Telefone', valor: '199978-1289'),
                       ],
                     ),
                   ),
                   const SizedBox(height: 10),
-
-                  // ── Segurança ──
                   Container(
                     width: double.infinity,
                     color: Colors.white,
@@ -166,7 +163,9 @@ class _PerfilScreenState extends State<PerfilScreen> {
                         const Divider(height: 1, color: Color(0xFFEEEEEE)),
                         Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -181,31 +180,38 @@ class _PerfilScreenState extends State<PerfilScreen> {
                               Transform.scale(
                                 scale: 0.85,
                                 child: Switch(
-                                  value: _2faativado,
-                                  onChanged: (v) =>
-                                      setState(() => _2faativado = v),
+                                  value: _2faAtivado,
+                                  onChanged: (value) =>
+                                      setState(() => _2faAtivado = value),
                                   activeColor: Colors.white,
                                   activeTrackColor: const Color(0xFF9E9E9E),
                                   inactiveThumbColor: Colors.white,
                                   inactiveTrackColor: const Color(0xFFBDBDBD),
-                                  trackOutlineColor:
-                                      MaterialStateProperty.all(Colors.transparent),
+                                  trackOutlineColor: MaterialStateProperty.all(
+                                    Colors.transparent,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const Divider(height: 1, indent: 16, color: Color(0xFFEEEEEE)),
+                        const Divider(
+                          height: 1,
+                          indent: 16,
+                          color: Color(0xFFEEEEEE),
+                        ),
                         GestureDetector(
                           onTap: () {
                             // TODO: alterar senha
                           },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 18),
+                          child: const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 18,
+                            ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: const [
+                              children: [
                                 Text(
                                   'Alterar Senha',
                                   style: TextStyle(
@@ -229,14 +235,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     ),
                   ),
                   const SizedBox(height: 28),
-
-                  // ── Sair da conta ──
                   GestureDetector(
                     onTap: () async {
                       await _authService.signOut();
                       if (!context.mounted) return;
                       Navigator.of(context).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const SplashScreen()),
+                        MaterialPageRoute(
+                          builder: (_) => const SplashScreen(),
+                        ),
                         (route) => false,
                       );
                     },
@@ -254,19 +260,17 @@ class _PerfilScreenState extends State<PerfilScreen> {
               ),
             ),
           ),
-
-          // ── Bottom Nav ──
-          _BottomNav(),
         ],
       ),
+      bottomNavigationBar: const AppBottomNav(currentIndex: 0),
     );
   }
 }
 
-// ── Linha label + valor ───────────────────────────────────────
 class _LinhaInfo extends StatelessWidget {
   final String label;
   final String valor;
+
   const _LinhaInfo({required this.label, required this.valor});
 
   @override
@@ -276,124 +280,20 @@ class _LinhaInfo extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
-              style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87)),
-          Text(valor,
-              style:
-                  const TextStyle(fontSize: 14, color: Colors.black45)),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Bottom Navigation ─────────────────────────────────────────
-class _BottomNav extends StatelessWidget {
-  const _BottomNav();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.07),
-            blurRadius: 12,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _NavItem(
-                icon: Icons.home_outlined,
-                label: 'Home',
-                onTap: () {
-                  navigateNoAnimation(context, const HomeScreen());
-                },
-              ),
-              _NavItem(
-                icon: Icons.grid_view_outlined,
-                label: 'Startups',
-                onTap: () {
-                  navigateNoAnimation(context, const StartupsScreen());
-                },
-              ),
-              _NavItem(
-                icon: Icons.account_balance_wallet_outlined,
-                label: 'Carteira',
-              ),
-              _NavItem(
-                icon: Icons.swap_horiz_outlined,
-                label: 'Balcão',
-              ),
-              _NavItem(
-                icon: Icons.trending_up_outlined,
-                label: 'DashBoard',
-              ),
-            ],
-          )
-        ),
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = selected ? const Color(0xFF6C63FF) : Colors.black45;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 24, color: color),
-          const SizedBox(height: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 11,
-              color: color,
-              fontWeight:
-                  selected ? FontWeight.w600 : FontWeight.normal,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
             ),
+          ),
+          Text(
+            valor,
+            style: const TextStyle(fontSize: 14, color: Colors.black45),
           ),
         ],
       ),
     );
   }
-}
-
-void navigateNoAnimation(BuildContext context, Widget page) {
-  Navigator.pushReplacement(
-    context,
-    PageRouteBuilder(
-      pageBuilder: (_, __, ___) => page,
-      transitionDuration: Duration.zero,
-      reverseTransitionDuration: Duration.zero,
-    ),
-  );
 }
