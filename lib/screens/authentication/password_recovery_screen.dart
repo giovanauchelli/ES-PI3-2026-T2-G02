@@ -1,438 +1,445 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../services/password_recovery_service.dart';
-import 'reset_password_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../services/auth_service.dart';
 
-class RecuperarSenhaCodigoScreen extends StatefulWidget {
-  const RecuperarSenhaCodigoScreen({super.key, required this.email});
+enum _Passo { email, instrucoes, redefinir }
 
-  final String email;
+class RecuperarSenhaScreen extends StatefulWidget {
+  const RecuperarSenhaScreen({super.key});
 
   @override
-  State<RecuperarSenhaCodigoScreen> createState() =>
-      _RecuperarSenhaCodigoScreenState();
+  State<RecuperarSenhaScreen> createState() => _RecuperarSenhaScreenState();
 }
 
-class _RecuperarSenhaCodigoScreenState
-    extends State<RecuperarSenhaCodigoScreen> {
-  static const int _totalDigitos = 6;
-  static const int _tempoInicial = 50;
+class _RecuperarSenhaScreenState extends State<RecuperarSenhaScreen> {
+  _Passo _passo = _Passo.email;
 
-  final PasswordRecoveryService _passwordRecoveryService =
-      PasswordRecoveryService();
-  final List<TextEditingController> _controllers =
-      List.generate(_totalDigitos, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes =
-      List.generate(_totalDigitos, (_) => FocusNode());
+  final _emailController = TextEditingController();
+  final _senhaController = TextEditingController();
+  final _confirmarController = TextEditingController();
 
-  int _segundosRestantes = _tempoInicial;
-  Timer? _timer;
-  bool _isSendingCode = false;
+  bool _obscureSenha = true;
+  bool _obscureConfirmar = true;
+  bool _isLoading = false;
 
   @override
-  void initState() {
-    super.initState();
-    _iniciarTimer();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _focusNodes[0].requestFocus();
-      await _enviarCodigo(showSuccessMessage: false);
-    });
+  void dispose() {
+    _emailController.dispose();
+    _senhaController.dispose();
+    _confirmarController.dispose();
+    super.dispose();
   }
 
-  void _iniciarTimer() {
-    _timer?.cancel();
-    setState(() => _segundosRestantes = _tempoInicial);
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
-
-      if (_segundosRestantes <= 1) {
-        t.cancel();
-        setState(() => _segundosRestantes = 0);
-      } else {
-        setState(() => _segundosRestantes--);
-      }
-    });
-  }
-
-  void _onDigitChanged(int index, String value) {
-    if (value.length == 1 && index < _totalDigitos - 1) {
-      _focusNodes[index + 1].requestFocus();
-    } else if (value.isEmpty && index > 0) {
-      _focusNodes[index - 1].requestFocus();
-    }
-    setState(() {});
-  }
-
-  bool get _codigoCompleto => _controllers.every((c) => c.text.isNotEmpty);
-
-  String get _codigoDigitado => _controllers.map((c) => c.text).join();
-
-  Future<void> _enviarCodigo({required bool showSuccessMessage}) async {
-    if (_isSendingCode) return;
-
-    setState(() => _isSendingCode = true);
-
-    try {
-      await _passwordRecoveryService.sendRecoveryCode(email: widget.email);
-      if (!mounted) return;
-
-      if (showSuccessMessage) {
-        _mostrarMensagem(
-          'Um novo codigo de 6 digitos foi enviado para ${widget.email}.',
-        );
-      }
-    } catch (error) {
-      if (!mounted) return;
-      _mostrarMensagem(
-        _mensagemErroEnvio(error),
-        isError: true,
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isSendingCode = false);
-      }
-    }
-  }
-
-  void _redefinirSenha() {
-    if (!_codigoCompleto || _isSendingCode) return;
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => RedefinirNovaSenhaScreen(
-          email: widget.email,
-          code: _codigoDigitado,
+  // ── AppBar com gradiente ──────────────────────────────────────
+  PreferredSizeWidget _appBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Colors.black87),
+        onPressed: () {
+          if (_passo == _Passo.email) {
+            Navigator.maybePop(context);
+          } else if (_passo == _Passo.instrucoes) {
+            setState(() => _passo = _Passo.email);
+          } else {
+            setState(() => _passo = _Passo.instrucoes);
+          }
+        },
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(2),
+        child: Container(
+          height: 2,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF6C63FF), Color(0xFFE040FB), Color(0xFFFF6B6B)],
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _reenviar() async {
-    for (final c in _controllers) {
-      c.clear();
-    }
-
-    _focusNodes[0].requestFocus();
-    _iniciarTimer();
-    setState(() {});
-    await _enviarCodigo(showSuccessMessage: true);
+  // ── Input decoration ─────────────────────────────────────────
+  InputDecoration _inputDecoration({required String hint, Widget? suffixIcon}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.5),
+      ),
+      filled: true,
+      fillColor: Colors.white,
+      suffixIcon: suffixIcon,
+    );
   }
 
-  void _mostrarMensagem(String mensagem, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(mensagem),
-        backgroundColor: isError ? Colors.red[400] : Colors.green[400],
+  // ── Botão padrão ─────────────────────────────────────────────
+  Widget _botao({required String label, required VoidCallback? onPressed}) {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          side: BorderSide(
+            color: onPressed == null ? Colors.grey : Colors.black87,
+            width: 1.5,
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        child: _isLoading
+            ? const SizedBox(
+                height: 24,
+                width: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black87),
+                ),
+              )
+            : Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                ),
+              ),
       ),
     );
   }
 
-  String _mensagemErroEnvio(Object error) {
-    final texto = error.toString().toLowerCase();
-
-    if (texto.contains('failed-precondition')) {
-      return 'O servico de e-mail ainda nao foi configurado no backend.';
-    }
-
-    if (texto.contains('invalid-argument')) {
-      return 'O e-mail informado e invalido.';
-    }
-
-    return 'Nao foi possivel enviar o codigo agora. Tente novamente.';
+  void _mostrarErro(String mensagem) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensagem),
+        backgroundColor: Colors.red[400],
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    for (final c in _controllers) {
-      c.dispose();
-    }
-    for (final f in _focusNodes) {
-      f.dispose();
-    }
-    super.dispose();
+  // ── Passo 1: digitar e-mail ───────────────────────────────────
+  Widget _telaEmail() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Recuperar Senha',
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Digite seu Email para recuperação',
+          style: TextStyle(fontSize: 14, color: Colors.black45),
+        ),
+        const SizedBox(height: 48),
+        const Text(
+          'E-mail',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _emailController,
+          keyboardType: TextInputType.emailAddress,
+          style: const TextStyle(fontSize: 14, color: Colors.black87),
+          decoration: _inputDecoration(hint: 'seu_email@dominio.com'),
+        ),
+        const SizedBox(height: 32),
+        _botao(
+          label: 'Prosseguir',
+          onPressed: _isLoading
+              ? null
+              : () async {
+                  final email = _emailController.text.trim();
+                  if (email.isEmpty) {
+                    _mostrarErro('Por favor, informe seu e-mail');
+                    return;
+                  }
+                  if (!email.contains('@')) {
+                    _mostrarErro('E-mail inválido');
+                    return;
+                  }
+
+                  setState(() => _isLoading = true);
+
+                  try {
+                    await AuthService().sendPasswordResetEmail(email: email);
+                    if (mounted) {
+                      setState(() {
+                        _isLoading = false;
+                        _passo = _Passo.instrucoes;
+                      });
+                    }
+                  } on FirebaseAuthException catch (e) {
+                    if (mounted) {
+                      setState(() => _isLoading = false);
+                      String mensagem;
+                      switch (e.code) {
+                        case 'user-not-found':
+                          mensagem = 'Nenhuma conta encontrada com este e-mail';
+                          break;
+                        case 'invalid-email':
+                          mensagem = 'E-mail inválido';
+                          break;
+                        case 'too-many-requests':
+                          mensagem =
+                              'Muitas tentativas. Tente novamente mais tarde';
+                          break;
+                        default:
+                          mensagem = e.message ?? 'Erro ao enviar e-mail';
+                      }
+                      _mostrarErro(mensagem);
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      setState(() => _isLoading = false);
+                      _mostrarErro('Erro inesperado. Tente novamente');
+                    }
+                  }
+                },
+        ),
+      ],
+    );
+  }
+
+  // ── Passo 2: instruções enviadas ─────────────────────────────
+  Widget _telaInstrucoes() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Recuperar Senha',
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Verifique a sua caixa de entrada!',
+          style: TextStyle(fontSize: 14, color: Colors.black45),
+        ),
+        const SizedBox(height: 80),
+        Center(
+          child: Column(
+            children: [
+              const Text(
+                'Instruções Enviadas!',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 12),
+              RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.black54,
+                    height: 1.5,
+                  ),
+                  children: [
+                    const TextSpan(text: 'Enviamos um Email para '),
+                    TextSpan(
+                      text: _emailController.text.trim(),
+                      style: const TextStyle(
+                        color: Color(0xFF6C63FF),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const TextSpan(
+                      text: ' com\nas instruções para redefinir sua senha',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 80),
+        const Center(
+          child: Text(
+            'Não recebeu? Verifique sua pasta de\nspam ou aguarde alguns minutos',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.black45),
+          ),
+        ),
+        const SizedBox(height: 20),
+        _botao(
+          label: 'Voltar ao Login',
+          onPressed: () => Navigator.maybePop(context),
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: GestureDetector(
+            onTap: _isLoading
+                ? null
+                : () async {
+                    setState(() => _isLoading = true);
+                    try {
+                      await AuthService().sendPasswordResetEmail(
+                        email: _emailController.text.trim(),
+                      );
+                      if (mounted) {
+                        setState(() => _isLoading = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('E-mail reenviado com sucesso!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } catch (_) {
+                      if (mounted) {
+                        setState(() => _isLoading = false);
+                        _mostrarErro('Erro ao reenviar e-mail');
+                      }
+                    }
+                  },
+            child: const Text(
+              'Reenviar Email',
+              style: TextStyle(
+                fontSize: 14,
+                color: Color(0xFF6C63FF),
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Passo 3: redefinir senha (não é mais necessário com Firebase,
+  //    mas mantido caso queira usar no futuro) ───────────────────
+  Widget _telaRedefinir() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Redefinir nova Senha',
+          style: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          'Crie uma nova senha de acesso',
+          style: TextStyle(fontSize: 14, color: Colors.black45),
+        ),
+        const SizedBox(height: 48),
+        const Text(
+          'Digite sua nova senha',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _senhaController,
+          obscureText: _obscureSenha,
+          style: const TextStyle(fontSize: 14, color: Colors.black87),
+          decoration: _inputDecoration(
+            hint: 'Nova Senha',
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureSenha
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                color: Colors.black38,
+                size: 20,
+              ),
+              onPressed: () => setState(() => _obscureSenha = !_obscureSenha),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Confirme sua nova senha',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _confirmarController,
+          obscureText: _obscureConfirmar,
+          style: const TextStyle(fontSize: 14, color: Colors.black87),
+          decoration: _inputDecoration(
+            hint: 'Nova Senha',
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureConfirmar
+                    ? Icons.visibility_off_outlined
+                    : Icons.visibility_outlined,
+                color: Colors.black38,
+                size: 20,
+              ),
+              onPressed: () =>
+                  setState(() => _obscureConfirmar = !_obscureConfirmar),
+            ),
+          ),
+        ),
+        const SizedBox(height: 40),
+        _botao(
+          label: 'Enviar',
+          onPressed: () {
+            debugPrint('Nova senha: ${_senhaController.text}');
+          },
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(
-        children: [
-          Container(
-            color: Colors.white,
-            child: SafeArea(
-              bottom: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 3,
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Color(0xFF6C63FF),
-                          Color(0xFFE040FB),
-                          Color(0xFFFF6B6B),
-                        ],
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.arrow_back,
-                      color: Colors.black87,
-                      size: 22,
-                    ),
-                    onPressed: () => Navigator.maybePop(context),
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
+      appBar: _appBar(),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: KeyedSubtree(
+              key: ValueKey(_passo),
+              child: switch (_passo) {
+                _Passo.email => _telaEmail(),
+                _Passo.instrucoes => _telaInstrucoes(),
+                _Passo.redefinir => _telaRedefinir(),
+              },
             ),
           ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Recuperar Senha',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Verifique a sua caixa de entrada!',
-                    style: TextStyle(fontSize: 14, color: Colors.black45),
-                  ),
-                  const SizedBox(height: 4),
-                  const Divider(color: Color(0xFFEEEEEE)),
-                  const SizedBox(height: 16),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEAE8FF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: RichText(
-                      text: TextSpan(
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Colors.black87,
-                          height: 1.5,
-                        ),
-                        children: [
-                          const TextSpan(
-                            text: 'Enviamos um codigo de verificacao para ',
-                          ),
-                          TextSpan(
-                            text: widget.email,
-                            style: const TextStyle(
-                              color: Color(0xFF6C63FF),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const TextSpan(
-                            text: '. Use-o para redefinir sua senha.',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 48),
-                  Center(
-                    child: Column(
-                      children: [
-                        const Text(
-                          'Digite o codigo enviado',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        RichText(
-                          text: TextSpan(
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Colors.black45,
-                            ),
-                            children: [
-                              const TextSpan(text: 'o codigo expira em '),
-                              TextSpan(
-                                text: '${_segundosRestantes}s',
-                                style: const TextStyle(
-                                  color: Color(0xFF6C63FF),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: List.generate(
-                      _totalDigitos,
-                      (i) => _DigitBox(
-                        controller: _controllers[i],
-                        focusNode: _focusNodes[i],
-                        onChanged: (v) => _onDigitChanged(i, v),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 180),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: OutlinedButton(
-                      onPressed: _codigoCompleto && !_isSendingCode
-                          ? _redefinirSenha
-                          : null,
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(
-                          color: _codigoCompleto && !_isSendingCode
-                              ? Colors.black87
-                              : Colors.black26,
-                          width: 1.5,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: _isSendingCode
-                          ? SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: const AlwaysStoppedAnimation<Color>(
-                                  Colors.black87,
-                                ),
-                              ),
-                            )
-                          : Text(
-                              'Redefinir Senha',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: _codigoCompleto
-                                    ? Colors.black87
-                                    : Colors.black38,
-                              ),
-                            ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Center(
-                    child: Text(
-                      'Nao recebeu? Verifique sua pasta de\nspam ou aguarde alguns minutos',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.black45,
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 7),
-                  Center(
-                    child: GestureDetector(
-                      onTap: _isSendingCode ? null : _reenviar,
-                      child: Text(
-                        _isSendingCode ? 'Enviando...' : 'Reenviar Email',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: _isSendingCode
-                              ? Colors.black38
-                              : const Color(0xFF6C63FF),
-                          fontWeight: FontWeight.w600,
-                          decoration: TextDecoration.underline,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DigitBox extends StatelessWidget {
-  const _DigitBox({
-    required this.controller,
-    required this.focusNode,
-    required this.onChanged,
-  });
-
-  final TextEditingController controller;
-  final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final hasValue = controller.text.isNotEmpty;
-
-    return SizedBox(
-      width: 46,
-      height: 58,
-      child: TextField(
-        controller: controller,
-        focusNode: focusNode,
-        onChanged: onChanged,
-        textAlign: TextAlign.center,
-        keyboardType: TextInputType.number,
-        maxLength: 1,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        style: const TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w700,
-          color: Colors.black87,
-        ),
-        decoration: InputDecoration(
-          counterText: '',
-          contentPadding: EdgeInsets.zero,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(
-              color: hasValue ? Colors.green : const Color(0xFFDDDDDD),
-            ),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(
-              color: hasValue ? Colors.green : const Color(0xFFDDDDDD),
-            ),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(
-              color: Color(0xFF6C63FF),
-              width: 1.5,
-            ),
-          ),
-          filled: true,
-          fillColor: Colors.white,
         ),
       ),
     );

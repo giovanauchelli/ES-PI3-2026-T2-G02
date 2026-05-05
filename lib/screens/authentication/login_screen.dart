@@ -44,7 +44,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _emailController.text.trim();
     final senha = _senhaController.text;
 
-    // Validação básica
     if (email.isEmpty || senha.isEmpty) {
       _mostrarErro('Por favor, preencha todos os campos');
       return;
@@ -69,16 +68,14 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (mounted) {
-        final uid = userCredential.user?.uid;
-        final nomeUsuario = uid == null
-            ? null
-            : await _authService.getUserDisplayName(uid);
+        final nomeUsuario = userCredential.user?.displayName;
 
         _mostrarSucesso(
-          nomeUsuario == null ? 'Bem-vindo!' : 'Bem-vindo, $nomeUsuario!',
+          nomeUsuario == null || nomeUsuario.isEmpty
+              ? 'Bem-vindo!'
+              : 'Bem-vindo, $nomeUsuario!',
         );
 
-        // Navegar para tela inicial após 1.5 segundos
         await Future.delayed(const Duration(milliseconds: 1500));
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
@@ -144,35 +141,25 @@ class _LoginScreenState extends State<LoginScreen> {
     return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
   }
 
-
   InputDecoration _inputDecoration({
     required String hint,
     Widget? suffixIcon,
-    Color? enabledBorderColor,
-    Color? focusedBorderColor,
   }) {
-    final borderColor = enabledBorderColor ?? const Color(0xFFE0E0E0);
-    final activeBorderColor =
-        focusedBorderColor ?? enabledBorderColor ?? const Color(0xFF6C63FF);
-
     return InputDecoration(
       hintText: hint,
       hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: borderColor),
+        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: borderColor),
+        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide(color: activeBorderColor, width: 1.5),
+        borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.5),
       ),
       filled: true,
       fillColor: Colors.white,
@@ -244,9 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 keyboardType: TextInputType.emailAddress,
                 enabled: !_isLoading,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: _inputDecoration(
-                  hint: 'seu_email@dominio.com',
-                ),
+                decoration: _inputDecoration(hint: 'seu_email@dominio.com'),
               ),
               const SizedBox(height: 20),
 
@@ -290,20 +275,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   onTap: _isLoading
                       ? null
                       : () {
-                          final email = _emailController.text.trim().toLowerCase();
-
-                          if (!_isValidEmail(email)) {
-                            _mostrarErro(
-                              'Informe um e-mail valido para recuperar a senha',
-                            );
-                            return;
-                          }
-
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  RecuperarSenhaCodigoScreen(email: email),
+                              builder: (_) => const RecuperarSenhaScreen(),
                             ),
                           );
                         },
@@ -343,7 +318,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   child: _isLoading
-                      ? SizedBox(
+                      ? const SizedBox(
                           height: 24,
                           width: 24,
                           child: CircularProgressIndicator(
