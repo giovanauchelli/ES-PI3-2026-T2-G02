@@ -1,6 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
 import '../home/home_screen.dart';
 import 'password_recovery_screen.dart';
@@ -13,15 +12,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const int _maxTentativasSenha = 5;
-  static const Duration _duracaoBloqueio = Duration(minutes: 5);
-
   final _emailController = TextEditingController();
   final _senhaController = TextEditingController();
   bool _obscureSenha = true;
   bool _isLoading = false;
-  int _tentativasSenhaInvalidas = 0;
-  DateTime? _bloqueadoAte;
 
   late final AuthService _authService;
 
@@ -29,8 +23,6 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _authService = AuthService();
-    _emailController.addListener(_atualizarEstadoCampos);
-    _senhaController.addListener(_atualizarEstadoCampos);
   }
 
   @override
@@ -40,67 +32,18 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _atualizarEstadoCampos() {
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  bool get _loginBloqueado {
-    final bloqueadoAte = _bloqueadoAte;
-    if (bloqueadoAte == null) return false;
-
-    if (DateTime.now().isAfter(bloqueadoAte)) {
-      _bloqueadoAte = null;
-      _tentativasSenhaInvalidas = 0;
-      return false;
-    }
-
-    return true;
-  }
-
-  bool _isErroSenha(String errorCode) {
-    return errorCode == 'wrong-password' ||
-        errorCode == 'invalid-credential' ||
-        errorCode == 'invalid-login-credentials';
-  }
-
-  void _registrarTentativaSenhaInvalida() {
-    _tentativasSenhaInvalidas++;
-
-    if (_tentativasSenhaInvalidas >= _maxTentativasSenha) {
-      _bloqueadoAte = DateTime.now().add(_duracaoBloqueio);
-    }
-  }
-
-  void _resetarControleTentativas() {
-    _tentativasSenhaInvalidas = 0;
-    _bloqueadoAte = null;
-  }
-
-  void _limparCamposLogin() {
-    _emailController.clear();
-    _senhaController.clear();
-  }
-
   void _entrar() async {
-    if (_loginBloqueado) {
-      _mostrarErro(
-        'Acesso temporariamente bloqueado por seguranca. Tente novamente mais tarde.',
-      );
-      return;
-    }
-
     final email = _emailController.text.trim();
     final senha = _senhaController.text;
 
+    // Validação básica
     if (email.isEmpty || senha.isEmpty) {
       _mostrarErro('Por favor, preencha todos os campos');
       return;
     }
 
-    if (!_isValidEmail(email)) {
-      _mostrarErro('E-mail invalido');
+    if (!email.contains('@')) {
+      _mostrarErro('E-mail inválido');
       return;
     }
 
@@ -118,22 +61,9 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (mounted) {
-<<<<<<< HEAD
-        final nomeUsuario = userCredential.user?.displayName;
-=======
-        setState(_resetarControleTentativas);
-        final uid = userCredential.user?.uid;
-        final nomeUsuario = uid == null
-            ? null
-            : await _authService.getUserDisplayName(uid);
->>>>>>> 3b98eff3f84c9933e747882bf8fc297bf9ecdc21
+        _mostrarSucesso('Bem-vindo, ${userCredential.user?.email}!');
 
-        _mostrarSucesso(
-          nomeUsuario == null || nomeUsuario.isEmpty
-              ? 'Bem-vindo!'
-              : 'Bem-vindo, $nomeUsuario!',
-        );
-
+        // Navegar para tela inicial após 1.5 segundos
         await Future.delayed(const Duration(milliseconds: 1500));
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
@@ -144,33 +74,19 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     } on FirebaseAuthException catch (e) {
       String mensagem = 'Erro ao fazer login';
-      final erroSenha = _isErroSenha(e.code);
-
-      if (erroSenha) {
-        setState(_registrarTentativaSenhaInvalida);
-      }
 
       switch (e.code) {
         case 'user-not-found':
-          mensagem = 'email ou senha invalidos';
-          _limparCamposLogin();
+          mensagem = 'Usuário não encontrado';
           break;
         case 'wrong-password':
-        case 'invalid-credential':
-        case 'invalid-login-credentials':
-          if (_loginBloqueado) {
-            mensagem =
-                'Acesso temporariamente bloqueado por seguranca. Tente novamente mais tarde.';
-          } else {
-            mensagem = 'email ou senha invalidos';
-            _limparCamposLogin();
-          }
+          mensagem = 'Senha incorreta';
           break;
         case 'invalid-email':
-          mensagem = 'E-mail invalido';
+          mensagem = 'E-mail inválido';
           break;
         case 'user-disabled':
-          mensagem = 'Usuario desativado';
+          mensagem = 'Usuário desativado';
           break;
         case 'too-many-requests':
           mensagem = 'Muitas tentativas. Tente novamente mais tarde';
@@ -209,36 +125,6 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  bool _isValidEmail(String value) {
-    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value);
-  }
-
-  InputDecoration _inputDecoration({
-    required String hint,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.5),
-      ),
-      filled: true,
-      fillColor: Colors.white,
-      suffixIcon: suffixIcon,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -272,6 +158,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Título
               const Text(
                 'Login',
                 style: TextStyle(
@@ -282,10 +169,12 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Insira seus dados para comecar',
+                'Insira seus dados para começar',
                 style: TextStyle(fontSize: 14, color: Colors.black45),
               ),
               const SizedBox(height: 48),
+
+              // Campo E-mail
               const Text(
                 'E-mail',
                 style: TextStyle(
@@ -298,11 +187,39 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
-                enabled: !_isLoading,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: _inputDecoration(hint: 'seu_email@dominio.com'),
+                decoration: InputDecoration(
+                  hintText: 'seu_email@dominio.com',
+                  hintStyle: const TextStyle(
+                    color: Colors.black38,
+                    fontSize: 14,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF6C63FF),
+                      width: 1.5,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
               ),
               const SizedBox(height: 20),
+
+              // Campo Senha
               const Text(
                 'Senha',
                 style: TextStyle(
@@ -315,10 +232,34 @@ class _LoginScreenState extends State<LoginScreen> {
               TextField(
                 controller: _senhaController,
                 obscureText: _obscureSenha,
-                enabled: !_isLoading,
                 style: const TextStyle(fontSize: 14, color: Colors.black87),
-                decoration: _inputDecoration(
-                  hint: 'Digite a sua senha',
+                decoration: InputDecoration(
+                  hintText: 'Digite a sua senha',
+                  hintStyle: const TextStyle(
+                    color: Colors.black38,
+                    fontSize: 14,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF6C63FF),
+                      width: 1.5,
+                    ),
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
                   suffixIcon: IconButton(
                     icon: Icon(
                       _obscureSenha
@@ -327,32 +268,20 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: Colors.black38,
                       size: 20,
                     ),
-                    onPressed: _isLoading
-                        ? null
-                        : () => setState(() => _obscureSenha = !_obscureSenha),
+                    onPressed: () =>
+                        setState(() => _obscureSenha = !_obscureSenha),
                   ),
                 ),
               ),
               const SizedBox(height: 10),
+
+              // Esqueceu a senha
               Align(
                 alignment: Alignment.centerRight,
                 child: GestureDetector(
                   onTap: _isLoading
                       ? null
                       : () {
-<<<<<<< HEAD
-=======
-                          final email =
-                              _emailController.text.trim().toLowerCase();
-
-                          if (!_isValidEmail(email)) {
-                            _mostrarErro(
-                              'Informe um e-mail valido para recuperar a senha',
-                            );
-                            return;
-                          }
-
->>>>>>> 3b98eff3f84c9933e747882bf8fc297bf9ecdc21
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -379,11 +308,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 40),
+
+              // Botão Entrar
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: OutlinedButton(
-                  onPressed: _isLoading || _loginBloqueado ? null : _entrar,
+                  onPressed: _isLoading ? null : _entrar,
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(
                       color: _isLoading ? Colors.grey : Colors.black87,
@@ -394,7 +325,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   child: _isLoading
-                      ? const SizedBox(
+                      ? SizedBox(
                           height: 24,
                           width: 24,
                           child: CircularProgressIndicator(
@@ -404,11 +335,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         )
-                      : Text(
-                          _loginBloqueado
-                              ? 'Bloqueado temporariamente'
-                              : 'Entrar',
-                          style: const TextStyle(
+                      : const Text(
+                          'Entrar',
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: Colors.black87,
