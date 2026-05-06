@@ -1,32 +1,12 @@
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class PasswordRecoveryService {
-  PasswordRecoveryService({FirebaseFunctions? functions})
-    : _functions = functions ?? FirebaseFunctions.instance;
+  PasswordRecoveryService({FirebaseAuth? auth})
+      : _auth = auth ?? FirebaseAuth.instance;
 
-  final FirebaseFunctions _functions;
+  final FirebaseAuth _auth;
 
-  Future<void> sendRecoveryCode({required String email}) async {
-    final callable = _functions.httpsCallable(
-      'solicitarCodigoRecuperacaoSenha',
-    );
-
-    await callable.call(<String, dynamic>{
-      'email': email.trim().toLowerCase(),
-    });
-  }
-
-  Future<void> resetPassword({
-    required String email,
-    required String code,
-    required String newPassword,
-  }) async {
-    final callable = _functions.httpsCallable('redefinirSenhaComCodigo');
-
-    await callable.call(<String, dynamic>{
-      'email': email.trim().toLowerCase(),
-      'code': code.trim(),
-      'newPassword': newPassword,
-    });
+  Future<void> sendPasswordResetEmail({required String email}) async {
+    await _auth.sendPasswordResetEmail(email: email.trim().toLowerCase());
   }
 }
