@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../models/usuario.dart';
 
@@ -11,6 +12,9 @@ class RegistrationService {
 
   final FirebaseAuth _authService = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instanceFor(
+    region: 'southamerica-east1',
+  );
 
   Future<void> registerUser(Usuario usuario) async {
     final email = usuario.email?.trim().toLowerCase();
@@ -61,6 +65,8 @@ class RegistrationService {
         await currentUser.updateDisplayName(nome);
       }
 
+      await currentUser.getIdToken(true);
+
       final payload = usuario.toMap(includeSenha: false)
         ..['uid'] = currentUser.uid
         ..['cpf'] = cpf
@@ -73,7 +79,22 @@ class RegistrationService {
         ..['createdAt'] = FieldValue.serverTimestamp()
         ..['updatedAt'] = FieldValue.serverTimestamp();
 
-      await _firestore.collection('usuarios').doc(currentUser.uid).set(payload);
+      try {
+        final callable = _functions.httpsCallable('registrarUsuario');
+        await callable.call(<String, dynamic>{
+          'cpf': cpf,
+          'fullName': nome,
+          'dataNascimento': usuario.dataNascimento?.toIso8601String(),
+          'email': email,
+          'senha': senha,
+          'telefone': telefone,
+          'mfaHabilitado': usuario.mfaHabilitado,
+          'userActive': usuario.userActive,
+          'userloggedIn': false,
+        });
+      } on FirebaseFunctionsException catch (_) {
+        await _firestore.collection('usuarios').doc(currentUser.uid).set(payload);
+      }
     } on FirebaseException catch (error) {
       final createdUser = _authService.currentUser;
 
@@ -84,7 +105,8 @@ class RegistrationService {
       if (error.code == 'permission-denied') {
         throw FirebaseAuthException(
           code: 'permission-denied',
-          message: 'Nao foi possivel gravar os dados no Firestore.',
+          message:
+              'Nao foi possivel gravar os dados no Firestore.'
         );
       }
 

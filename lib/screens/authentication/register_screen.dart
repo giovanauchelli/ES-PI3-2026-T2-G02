@@ -245,6 +245,30 @@ class _CadastroScreenState extends State<CadastroScreen> {
     );
   }
 
+  Future<bool> _showDialogAtivar2FA() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ativar 2FA?'),
+        content: const Text(
+          'Quer ativar a verificação em duas etapas agora? Você poderá finalizar no próximo passo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Agora não'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Ativar'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
+  }
+
   String _mensagemAuth(FirebaseAuthException error) {
     switch (error.code) {
       case 'email-already-in-use':
@@ -331,7 +355,6 @@ class _CadastroScreenState extends State<CadastroScreen> {
     return idade >= 18;
   }
 
-<<<<<<< HEAD
   bool get _senhaFoiPreenchida => _senhaController.text.isNotEmpty;
 
   Color? get _corBordaNome {
@@ -379,37 +402,6 @@ class _CadastroScreenState extends State<CadastroScreen> {
     final borderColor = enabledBorderColor ?? const Color(0xFFE0E0E0);
     final activeBorderColor = focusedBorderColor ?? enabledBorderColor ?? const Color(0xFF6C63FF);
 
-=======
-  Future<bool> _showDialogAtivar2FA() async {
-    return await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: const Text('Ativar Autenticação de Dois Fatores?'),
-            content: const Text(
-              'Proteja sua conta com autenticação de dois fatores. '
-              'Você receberá um código por SMS para verificar seu login.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Depois'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text(
-                  'Ativar Agora',
-                  style: TextStyle(color: Color(0xFF6C63FF)),
-                ),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
-  InputDecoration _inputDecoration({required String hint, Widget? suffixIcon}) {
->>>>>>> 16d285de933d85594cbc18736b2b49adf2dbbf7f
     return InputDecoration(
       hintText: hint,
       hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
@@ -493,7 +485,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 style: TextStyle(fontSize: 14, color: Colors.black45),
               ),
               const SizedBox(height: 32),
-              _label('Nome completo'),
+              _label('Nome completo*'),
               TextField(
                 controller: _nomeController,
                 textCapitalization: TextCapitalization.words,
@@ -519,7 +511,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              _label('CPF'),
+              _label('CPF*'),
               TextField(
                 controller: _cpfController,
                 keyboardType: TextInputType.number,
@@ -536,7 +528,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              _label('Data de nascimento'),
+              _label('Data de nascimento*'),
               TextField(
                 controller: _dataNascimentoController,
                 keyboardType: TextInputType.number,
@@ -553,7 +545,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              _label('Telefone'),
+              _label('Telefone*'),
               TextField(
                 controller: _telefoneController,
                 keyboardType: TextInputType.phone,
@@ -566,7 +558,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 decoration: _inputDecoration(hint: '(00) 00000-0000'),
               ),
               const SizedBox(height: 20),
-              _label('Senha'),
+              _label('Senha*'),
               TextField(
                 controller: _senhaController,
                 obscureText: _obscureSenha,
@@ -591,7 +583,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              _label('Confirme sua senha'),
+              _label('Confirme sua senha*'),
               TextField(
                 controller: _confirmarSenhaController,
                 obscureText: _obscureConfirmarSenha,

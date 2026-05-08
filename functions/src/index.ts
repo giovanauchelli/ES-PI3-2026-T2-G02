@@ -3,7 +3,6 @@ import * as net from "node:net";
 import * as tls from "node:tls";
 import * as admin from "firebase-admin";
 import * as functions from "firebase-functions/v1";
-export { popularStartupsFirestore } from "./passardados";
 
 // Inicializa o SDK do Firebase Admin (requisito para acesso ao Auth/Firestore).
 admin.initializeApp();
@@ -40,7 +39,9 @@ type RedefinirSenhaPayload = {
 };
 
 // Função Callable: registra um usuário (valida autenticação, sanitiza payload, evita CPF duplicado e salva/merge no Firestore).
-export const registrarUsuario = functions.https.onCall(
+export const registrarUsuario = functions
+  .region('southamerica-east1')
+  .https.onCall(
   async (data: RegistrarUsuarioPayload, context) => {
     if (!context.auth?.uid) {
       throw new functions.https.HttpsError(
@@ -72,14 +73,18 @@ export const registrarUsuario = functions.https.onCall(
 );
 
 // Trigger Auth: ao remover usuário no Firebase Auth, tenta remover o perfil correspondente no Firestore.
-export const excluirPerfilAoExcluirAuth = functions.auth
+export const excluirPerfilAoExcluirAuth = functions
+  .region('southamerica-east1')
+  .auth
   .user()
   .onDelete(async (user) => {
     await usuariosCollection.doc(user.uid).delete().catch(() => undefined);
   });
 
 // Função Callable: solicita código de recuperação de senha, armazenando hash do código no Firestore e enviando e-mail.
-export const solicitarCodigoRecuperacaoSenha = functions.https.onCall(
+export const solicitarCodigoRecuperacaoSenha = functions
+  .region('southamerica-east1')
+  .https.onCall(
   async (data: SolicitarCodigoRecuperacaoPayload) => {
     const email = sanitizeEmail(data.email);
     const response = {
@@ -130,7 +135,9 @@ export const solicitarCodigoRecuperacaoSenha = functions.https.onCall(
 );
 
 // Função Callable: valida código de recuperação e redefine a senha do usuário no Firebase Auth, marcando o uso do código.
-export const redefinirSenhaComCodigo = functions.https.onCall(
+export const redefinirSenhaComCodigo = functions
+  .region('southamerica-east1')
+  .https.onCall(
   async (data: RedefinirSenhaPayload) => {
     const email = sanitizeEmail(data.email);
     const code = sanitizeRecoveryCode(data.code);
@@ -348,7 +355,9 @@ function pickPrecoFromData(
 }
 
 // Função Callable: lista startups do Firestore e retorna itens formatados (capital/tokens/preço) para o catálogo.
-export const listarStartups = functions.https.onCall(
+export const listarStartups = functions
+  .region('southamerica-east1')
+  .https.onCall(
   async (_data: Record<string, unknown> | undefined, _context) => {
     // tenta múltiplos nomes de coleção (pra não quebrar se o schema estiver diferente)
     const collectionsToTry = ["startups", "Startups", "startup"];

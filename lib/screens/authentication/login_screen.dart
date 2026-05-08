@@ -1,5 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
 import '../home/home_screen.dart';
 import 'password_recovery_screen.dart';
@@ -37,14 +39,13 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = _emailController.text.trim();
     final senha = _senhaController.text;
 
-    // Validação básica
     if (email.isEmpty || senha.isEmpty) {
       _mostrarErro('Por favor, preencha todos os campos');
       return;
     }
 
     if (!email.contains('@')) {
-      _mostrarErro('E-mail inválido');
+      _mostrarErro('E-mail invalido');
       return;
     }
 
@@ -62,19 +63,37 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final user = userCredential.user;
+      UserProfile? profile;
+
       if (user != null) {
+        await user.getIdToken(true);
+
+        profile = await _authService.ensureCurrentUserProfile();
+
+        if (!profile.userActive) {
+          await _authService.signOut();
+          _mostrarErro(
+            'Sua conta esta desativada. Fale com um administrador.',
+          );
+          return;
+        }
+
         try {
           final isMfaEnabled = await _authService.isMultiFactorEnabled(user);
           if (isMfaEnabled) {
             final phone = await _authService.getPhoneForMFA(user);
             if (phone == null || phone.isEmpty) {
               await _authService.signOut();
-              _mostrarErro('Conta com 2FA ativado, mas telefone não encontrado.');
+              _mostrarErro(
+                'Conta com 2FA ativado, mas telefone nao encontrado.',
+              );
               return;
             }
 
             try {
-              final verificationId = await _authService.sendMFACode(phoneNumber: phone);
+              final verificationId = await _authService.sendMFACode(
+                phoneNumber: phone,
+              );
               if (mounted) {
                 Navigator.of(context).push(
                   MaterialPageRoute(
@@ -87,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
               }
               return;
             } on FirebaseAuthException catch (e) {
-              _mostrarErro('Erro ao enviar código 2FA: ${e.message}');
+              _mostrarErro('Erro ao enviar codigo 2FA: ${e.message}');
               return;
             }
           }
@@ -96,10 +115,13 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
 
-      if (mounted) {
-        _mostrarSucesso('Bem-vindo, ${userCredential.user?.email}!');
+      if (mounted && user != null) {
+        final displayName = _authService.formatDisplayName(profile?.fullName);
+        final saudacao = displayName != null
+            ? 'Bem-vindo, $displayName${profile?.isAdmin == true ? ' (admin)' : ''}!'
+            : 'Bem-vindo, ${userCredential.user?.email}!';
+        _mostrarSucesso(saudacao);
 
-        // Navegar para tela inicial após 1.5 segundos
         await Future.delayed(const Duration(milliseconds: 1500));
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
@@ -113,22 +135,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
       switch (e.code) {
         case 'user-not-found':
-          mensagem = 'Usuário não encontrado';
+          mensagem = 'Usuario nao encontrado';
           break;
         case 'wrong-password':
           mensagem = 'Senha incorreta';
           break;
         case 'invalid-email':
-          mensagem = 'E-mail inválido';
+          mensagem = 'E-mail invalido';
           break;
         case 'user-disabled':
-          mensagem = 'Usuário desativado';
+          mensagem = 'Usuario desativado';
           break;
         case 'too-many-requests':
           mensagem = 'Muitas tentativas. Tente novamente mais tarde';
           break;
         case 'multi-factor-auth-required':
-          mensagem = 'Verificação de dois fatores necessária';
+          mensagem = 'Verificacao de dois fatores necessaria';
           break;
         default:
           mensagem = e.message ?? 'Erro desconhecido';
@@ -197,7 +219,6 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Título
               const Text(
                 'Login',
                 style: TextStyle(
@@ -208,12 +229,10 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Insira seus dados para começar',
+                'Insira seus dados para comecar',
                 style: TextStyle(fontSize: 14, color: Colors.black45),
               ),
               const SizedBox(height: 48),
-
-              // Campo E-mail
               const Text(
                 'E-mail',
                 style: TextStyle(
@@ -257,8 +276,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Campo Senha
               const Text(
                 'Senha',
                 style: TextStyle(
@@ -313,8 +330,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 10),
-
-              // Esqueceu a senha
               Align(
                 alignment: Alignment.centerRight,
                 child: GestureDetector(
@@ -347,8 +362,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 40),
-
-              // Botão Entrar
               SizedBox(
                 width: double.infinity,
                 height: 50,

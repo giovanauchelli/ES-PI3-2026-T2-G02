@@ -1,10 +1,9 @@
-<<<<<<< HEAD
-import 'package:cloud_firestore/cloud_firestore.dart';
-=======
 import 'dart:async';
->>>>>>> 16d285de933d85594cbc18736b2b49adf2dbbf7f
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import '../models/user_profile.dart';
 import 'two_factor_auth_service.dart';
 import '../models/two_factor_auth_settings.dart';
 
@@ -14,11 +13,8 @@ class AuthService {
       _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
-<<<<<<< HEAD
   final FirebaseFirestore _firestore;
-=======
   final TwoFactorAuthService _twoFactorService = TwoFactorAuthService();
->>>>>>> 16d285de933d85594cbc18736b2b49adf2dbbf7f
 
   /// Login padrão
   Future<UserCredential> login({
@@ -236,14 +232,21 @@ class AuthService {
   }
 
   Future<String?> getUserFullName(String uid) async {
-    final snapshot = await _firestore.collection('usuarios').doc(uid).get();
-    final data = snapshot.data();
-    final value = data?['fullName'] as String?;
+    try {
+      final snapshot =
+          await _firestore.collection('usuarios').doc(uid).get();
+      final data = snapshot.data();
+      final value = data?['fullName'] as String?;
 
-    if (value == null) return null;
+      if (value == null) return null;
 
-    final fullName = value.trim();
-    return fullName.isEmpty ? null : fullName;
+      final fullName = value.trim();
+      return fullName.isEmpty ? null : fullName;
+    } on FirebaseException catch (e) {
+      debugPrint('[AuthService] getUserFullName permission error: '
+          'code=${e.code}, message=${e.message}');
+      rethrow;
+    }
   }
 
   String? formatDisplayName(String? fullName) {
@@ -282,6 +285,71 @@ class AuthService {
   Future<String?> getUserDisplayName(String uid) async {
     final fullName = await getUserFullName(uid);
     return formatDisplayName(fullName);
+  }
+
+  Future<UserProfile?> getUserProfile(String uid) async {
+    try {
+      final snapshot = await _firestore.collection('usuarios').doc(uid).get();
+      final data = snapshot.data();
+
+      if (!snapshot.exists || data == null) {
+        return null;
+      }
+
+      return UserProfile.fromMap(uid, data);
+    } on FirebaseException catch (e) {
+      debugPrint(
+        '[AuthService] getUserProfile error: code=${e.code}, message=${e.message}',
+      );
+      rethrow;
+    }
+  }
+
+  Future<UserProfile?> getCurrentUserProfile() async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    return getUserProfile(user.uid);
+  }
+
+  Future<UserProfile> ensureCurrentUserProfile() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: 'Usuario nao autenticado.',
+      );
+    }
+
+    final existingProfile = await getUserProfile(user.uid);
+    if (existingProfile != null) {
+      return existingProfile;
+    }
+
+    final fallbackName = user.displayName?.trim() ?? '';
+    final fallbackEmail = user.email?.trim().toLowerCase() ?? '';
+
+    final payload = <String, dynamic>{
+      'uid': user.uid,
+      'fullName': fallbackName,
+      'email': fallbackEmail,
+      'telefone': '',
+      'cpf': '',
+      'saldo': 0,
+      'mfaHabilitado': false,
+      'userActive': true,
+      'userloggedIn': true,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    await _firestore.collection('usuarios').doc(user.uid).set(payload);
+
+    return UserProfile.fromMap(user.uid, payload);
+  }
+
+  Future<bool> isCurrentUserActive() async {
+    final profile = await getCurrentUserProfile();
+    return profile?.userActive ?? false;
   }
 
   User? get currentUser => _auth.currentUser;

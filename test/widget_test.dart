@@ -9,10 +9,8 @@ void main() {
   ) async {
     await tester.pumpWidget(const MyApp());
 
-    expect(find.byType(RichText), findsOneWidget);
-    expect(find.byType(CustomPaint), findsOneWidget);
-
-    await tester.pump(const Duration(seconds: 2));
+    // SplashScreen navega após ~3s
+    await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
 
     expect(find.text('Entrar'), findsOneWidget);

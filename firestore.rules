@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function isDefaultUserProfile() {
+      return request.resource.data.uid == request.auth.uid &&
+        request.resource.data.isAdmin == false &&
+        request.resource.data.role == 'user';
+    }
+
+    function keepsProtectedUserFields() {
+      // Não exigir igualdade exata de createdAt:
+      // - o app usa serverTimestamp() / set() e isso pode gerar mismatch no update
+      // - createdAt é “protected”, então ainda bloqueamos alterações em campos sensíveis
+      return request.resource.data.uid == resource.data.uid &&
+        request.resource.data.cpf == resource.data.cpf &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.isAdmin == resource.data.isAdmin;
+    }
+
+    match /startups/{startupId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /usuarios/{userId} {
+      allow create: if isOwner(userId) && isDefaultUserProfile();
+      allow read: if isOwner(userId);
+      allow update: if isOwner(userId) && keepsProtectedUserFields();
+      allow delete: if false;
+    }
+
+    match /2fa_settings/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -33,14 +33,12 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.listarStartups = exports.redefinirSenhaComCodigo = exports.solicitarCodigoRecuperacaoSenha = exports.excluirPerfilAoExcluirAuth = exports.registrarUsuario = exports.popularStartupsFirestore = void 0;
+exports.listarStartups = exports.redefinirSenhaComCodigo = exports.solicitarCodigoRecuperacaoSenha = exports.excluirPerfilAoExcluirAuth = exports.registrarUsuario = void 0;
 const node_crypto_1 = require("node:crypto");
 const net = __importStar(require("node:net"));
 const tls = __importStar(require("node:tls"));
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions/v1"));
-var passardados_1 = require("./passardados");
-Object.defineProperty(exports, "popularStartupsFirestore", { enumerable: true, get: function () { return passardados_1.popularStartupsFirestore; } });
 // Inicializa o SDK do Firebase Admin (requisito para acesso ao Auth/Firestore).
 admin.initializeApp();
 const db = admin.firestore();
@@ -49,7 +47,9 @@ const passwordRecoveryCollection = db.collection("passwordRecoveryCodes");
 const recoveryCodeTtlMinutes = 10;
 const recoveryCodeLength = 6;
 // Função Callable: registra um usuário (valida autenticação, sanitiza payload, evita CPF duplicado e salva/merge no Firestore).
-exports.registrarUsuario = functions.https.onCall(async (data, context) => {
+exports.registrarUsuario = functions
+    .region('southamerica-east1')
+    .https.onCall(async (data, context) => {
     if (!context.auth?.uid) {
         throw new functions.https.HttpsError("unauthenticated", "Usuario nao autenticado.");
     }
@@ -68,13 +68,17 @@ exports.registrarUsuario = functions.https.onCall(async (data, context) => {
     };
 });
 // Trigger Auth: ao remover usuário no Firebase Auth, tenta remover o perfil correspondente no Firestore.
-exports.excluirPerfilAoExcluirAuth = functions.auth
+exports.excluirPerfilAoExcluirAuth = functions
+    .region('southamerica-east1')
+    .auth
     .user()
     .onDelete(async (user) => {
     await usuariosCollection.doc(user.uid).delete().catch(() => undefined);
 });
 // Função Callable: solicita código de recuperação de senha, armazenando hash do código no Firestore e enviando e-mail.
-exports.solicitarCodigoRecuperacaoSenha = functions.https.onCall(async (data) => {
+exports.solicitarCodigoRecuperacaoSenha = functions
+    .region('southamerica-east1')
+    .https.onCall(async (data) => {
     const email = sanitizeEmail(data.email);
     const response = {
         success: true,
@@ -110,7 +114,9 @@ exports.solicitarCodigoRecuperacaoSenha = functions.https.onCall(async (data) =>
     return response;
 });
 // Função Callable: valida código de recuperação e redefine a senha do usuário no Firebase Auth, marcando o uso do código.
-exports.redefinirSenhaComCodigo = functions.https.onCall(async (data) => {
+exports.redefinirSenhaComCodigo = functions
+    .region('southamerica-east1')
+    .https.onCall(async (data) => {
     const email = sanitizeEmail(data.email);
     const code = sanitizeRecoveryCode(data.code);
     const newPassword = sanitizeNewPassword(data.newPassword);
@@ -275,7 +281,9 @@ function pickPrecoFromData(data, cptAportado, totalTokens) {
     return 0;
 }
 // Função Callable: lista startups do Firestore e retorna itens formatados (capital/tokens/preço) para o catálogo.
-exports.listarStartups = functions.https.onCall(async (_data, _context) => {
+exports.listarStartups = functions
+    .region('southamerica-east1')
+    .https.onCall(async (_data, _context) => {
     // tenta múltiplos nomes de coleção (pra não quebrar se o schema estiver diferente)
     const collectionsToTry = ["startups", "Startups", "startup"];
     let snapshot = null;
@@ -594,4 +602,3 @@ function escapeSmtpData(message) {
         .replace(/\r?\n/g, "\r\n")
         .replace(/^\./gm, "..");
 }
-//# sourceMappingURL=index.js.map
