@@ -4,7 +4,14 @@ import 'package:flutter/services.dart'; //usado para limitar a entrada so a nume
 import '../home/home_screen.dart';
 
 class Verificacao2FAScreen extends StatefulWidget {
-  const Verificacao2FAScreen({super.key});
+  const Verificacao2FAScreen({
+    super.key,
+    this.canal = 'SMS',
+    this.destinoMascarado = '',
+  });
+
+  final String canal;
+  final String destinoMascarado;
 
   @override
   State<Verificacao2FAScreen> createState() => _Verificacao2FAScreenState();
@@ -249,6 +256,17 @@ class _Verificacao2FAScreenState extends State<Verificacao2FAScreen> {
                         ],
                       ),
                     ),
+                    if (widget.destinoMascarado.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Enviado por ${widget.canal} para ${widget.destinoMascarado}',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Colors.black45,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ],
                 ),
               ),

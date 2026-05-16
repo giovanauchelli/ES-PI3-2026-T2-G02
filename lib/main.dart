@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'firebase_options.dart';
 import 'screens/initial/splash_screen.dart';
+// import 'screens/profile/profile_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,6 +47,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: SplashScreen(),
+      // home: PerfilScreen(),
     );
   }
 }

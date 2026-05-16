@@ -18,6 +18,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
   final AuthService _authService = AuthService();
   UserProfile? _perfil;
   bool _carregando = true;
+  bool _salvandoMfa = false;
 
   @override
   void initState() {
@@ -31,11 +32,49 @@ class _PerfilScreenState extends State<PerfilScreen> {
       if (mounted) {
         setState(() {
           _perfil = perfil;
+          _2faAtivado = perfil?.mfaHabilitado ?? false;
           _carregando = false;
         });
       }
     } catch (_) {
       if (mounted) setState(() => _carregando = false);
+    }
+  }
+
+  Future<void> _alterarMfa(bool value) async {
+    if (_salvandoMfa) return;
+
+    setState(() => _salvandoMfa = true);
+
+    try {
+      await _authService.updateCurrentUserMfaStatus(value);
+      await _carregarPerfil();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _2faAtivado
+                ? 'Autenticacao em dois fatores ativada.'
+                : 'Autenticacao em dois fatores desativada.',
+          ),
+          backgroundColor: Colors.green[400],
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Nao foi possivel atualizar a autenticacao 2FA.'),
+          backgroundColor: Colors.red[400],
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _salvandoMfa = false);
+      }
     }
   }
 
@@ -224,7 +263,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                                       scale: 0.85,
                                       child: Switch(
                                         value: _2faAtivado,
-                                        onChanged: (value) => setState(() => _2faAtivado = value),
+                                        onChanged: _salvandoMfa ? null : _alterarMfa,
                                         activeColor: Colors.white,
                                         activeTrackColor: const Color(0xFF9E9E9E),
                                         inactiveThumbColor: Colors.white,

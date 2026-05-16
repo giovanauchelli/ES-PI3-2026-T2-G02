@@ -4,17 +4,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_profile.dart';
-import 'two_factor_auth_service.dart';
-import '../models/two_factor_auth_settings.dart';
 
 class AuthService {
   AuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
-    : _auth = auth ?? FirebaseAuth.instance,
-      _firestore = firestore ?? FirebaseFirestore.instance;
+      : _auth = auth ?? FirebaseAuth.instance,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
-  final TwoFactorAuthService _twoFactorService = TwoFactorAuthService();
 
   /// Login padrão
   Future<UserCredential> login({
@@ -38,26 +35,6 @@ class AuthService {
     );
   }
 
-  /// Verificar se o usuário tem 2FA ativado (via Firestore)
-  Future<bool> isMultiFactorEnabled(User user) async {
-    try {
-      final settings = await _twoFactorService.getTwoFactorSettings(user.uid);
-      return settings?.isEnabled ?? false;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Obter número de telefone para 2FA
-  Future<String?> getPhoneForMFA(User user) async {
-    try {
-      final settings = await _twoFactorService.getTwoFactorSettings(user.uid);
-      return settings?.phoneNumber;
-    } catch (e) {
-      return null;
-    }
-  }
-
   /// Enviar código de verificação por SMS para 2FA
   Future<String> sendMFACode({
     required String phoneNumber,
@@ -65,7 +42,8 @@ class AuthService {
     final completer = Completer<String>();
 
     try {
-      debugPrint('[AuthService] Iniciando verifyPhoneNumber para: $phoneNumber');
+      debugPrint(
+          '[AuthService] Iniciando verifyPhoneNumber para: $phoneNumber');
       _auth.verifyPhoneNumber(
         phoneNumber: phoneNumber,
         timeout: const Duration(seconds: 60),
@@ -79,13 +57,15 @@ class AuthService {
           }
         },
         verificationFailed: (FirebaseAuthException error) {
-          debugPrint('[AuthService] verificationFailed: ${error.code} - ${error.message}');
+          debugPrint(
+              '[AuthService] verificationFailed: ${error.code} - ${error.message}');
           if (!completer.isCompleted) {
             completer.completeError(error);
           }
         },
         codeSent: (String verificationId, int? resendToken) {
-          debugPrint('[AuthService] codeSent com verificationId: $verificationId');
+          debugPrint(
+              '[AuthService] codeSent com verificationId: $verificationId');
           if (!completer.isCompleted) {
             completer.complete(verificationId);
           }
@@ -114,7 +94,7 @@ class AuthService {
     }
   }
 
-  /// Verificar código OTP durante 2FA
+  /// Verificar código OTP durante 2FA (Reautenticação)
   Future<UserCredential> verifyMFACode({
     required String verificationId,
     required String smsCode,
@@ -135,93 +115,12 @@ class AuthService {
     return await user.reauthenticateWithCredential(credential);
   }
 
-  /// Iniciar inscrição de 2FA - enviar código por SMS
-  Future<String> enrollPhoneForMFA({
-    required String phoneNumber,
-  }) {
-    return sendMFACode(phoneNumber: phoneNumber);
+  /// Retorna se o usuário já possui Multi-Factor habilitado.
+  Future<bool> isMultiFactorEnabled(User user) async {
+    final factors = await user.multiFactor.getEnrolledFactors();
+    return factors.isNotEmpty;
   }
 
-  /// Completar inscrição de 2FA com código OTP
-  Future<void> completePhoneMfaEnrollment({
-    required String verificationId,
-    required String smsCode,
-    required String phoneNumber,
-  }) async {
-    final user = _auth.currentUser;
-    debugPrint('[AuthService] completePhoneMfaEnrollment - user: ${user?.uid}');
-    
-    if (user == null) {
-      throw FirebaseAuthException(
-        code: 'user-not-signed-in',
-        message: 'Usuário precisa estar autenticado para concluir a inscrição.',
-      );
-    }
-
-    final credential = PhoneAuthProvider.credential(
-      verificationId: verificationId,
-      smsCode: smsCode,
-    );
-
-    try {
-      debugPrint('[AuthService] Linkando credencial de telefone...');
-      await user.linkWithCredential(credential);
-      debugPrint('[AuthService] Credencial linkada com sucesso');
-    } on FirebaseAuthException catch (e) {
-      debugPrint('[AuthService] FirebaseAuthException ao linkar: ${e.code} - ${e.message}');
-      if (e.code != 'provider-already-linked') {
-        rethrow;
-      }
-    }
-
-    try {
-      debugPrint('[AuthService] Salvando configurações de 2FA...');
-      final settings = TwoFactorAuthSettings(
-        userId: user.uid,
-        isEnabled: true,
-        phoneNumber: phoneNumber,
-      );
-      await _twoFactorService.saveTwoFactorSettings(settings);
-      debugPrint('[AuthService] Configurações de 2FA salvas com sucesso');
-    } catch (e) {
-      debugPrint('[AuthService] Erro ao salvar configurações de 2FA: ${e.toString()}');
-      rethrow;
-    }
-  }
-
-  /// Remover 2FA desativando a flag de 2FA
-  Future<void> removeMultiFactorAuth() async {
-    try {
-      final user = _auth.currentUser;
-      if (user != null) {
-        final settings = TwoFactorAuthSettings(
-          userId: user.uid,
-          isEnabled: false,
-          phoneNumber: null,
-        );
-        await _twoFactorService.saveTwoFactorSettings(settings);
-      }
-    } catch (e) {
-      rethrow;
-    }
-  }
-
-  /// Verificar telefone durante login com 2FA
-  /// Retorna true se o código for válido
-  Future<bool> verifyPhoneForLogin({
-    required String verificationId,
-    required String smsCode,
-  }) async {
-    try {
-      await verifyMFACode(
-        verificationId: verificationId,
-        smsCode: smsCode,
-      );
-      return true;
-    } on FirebaseAuthException {
-      return false;
-    }
-  }
 
   Future<void> sendPasswordResetEmail({required String email}) {
     return _auth.sendPasswordResetEmail(email: email);
@@ -233,8 +132,7 @@ class AuthService {
 
   Future<String?> getUserFullName(String uid) async {
     try {
-      final snapshot =
-          await _firestore.collection('usuarios').doc(uid).get();
+      final snapshot = await _firestore.collection('usuarios').doc(uid).get();
       final data = snapshot.data();
       final value = data?['fullName'] as String?;
 
@@ -274,10 +172,8 @@ class AuthService {
       return '$primeiroNome $ultimoNome';
     }
 
-    final restantesAbreviados = partes
-        .skip(1)
-        .map((parte) => '${parte[0].toUpperCase()}.')
-        .join(' ');
+    final restantesAbreviados =
+        partes.skip(1).map((parte) => '${parte[0].toUpperCase()}.').join(' ');
 
     return '$primeiroNome $restantesAbreviados';
   }
@@ -309,6 +205,21 @@ class AuthService {
     final user = _auth.currentUser;
     if (user == null) return null;
     return getUserProfile(user.uid);
+  }
+
+  Future<void> updateCurrentUserMfaStatus(bool enabled) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'user-not-found',
+        message: 'Usuario nao autenticado.',
+      );
+    }
+
+    await _firestore.collection('usuarios').doc(user.uid).set({
+      'mfaHabilitado': enabled,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   Future<UserProfile> ensureCurrentUserProfile() async {

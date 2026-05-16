@@ -32,13 +32,18 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.listarStartups = exports.redefinirSenhaComCodigo = exports.solicitarCodigoRecuperacaoSenha = exports.excluirPerfilAoExcluirAuth = exports.registrarUsuario = void 0;
+exports.listarStartups = exports.verificarCodigoMfaCallable = exports.solicitarCodigoMfa = exports.redefinirSenhaComCodigo = exports.solicitarCodigoRecuperacaoSenha = exports.excluirPerfilAoExcluirAuth = exports.registrarUsuario = void 0;
 const node_crypto_1 = require("node:crypto");
 const net = __importStar(require("node:net"));
 const tls = __importStar(require("node:tls"));
 const admin = __importStar(require("firebase-admin"));
 const functions = __importStar(require("firebase-functions/v1"));
+const mfa_code_1 = require("./mfa_code");
+__exportStar(require("./mfa_code"), exports);
 // Inicializa o SDK do Firebase Admin (requisito para acesso ao Auth/Firestore).
 admin.initializeApp();
 const db = admin.firestore();
@@ -46,6 +51,9 @@ const usuariosCollection = db.collection("usuarios");
 const passwordRecoveryCollection = db.collection("passwordRecoveryCodes");
 const recoveryCodeTtlMinutes = 10;
 const recoveryCodeLength = 6;
+const passwordMinLength = 8;
+const passwordMaxLength = 20;
+const passwordPolicyMessage = "A senha deve ter entre 8 e 20 caracteres e incluir letra maiuscula, minuscula, numero e caractere especial.";
 // Função Callable: registra um usuário (valida autenticação, sanitiza payload, evita CPF duplicado e salva/merge no Firestore).
 exports.registrarUsuario = functions
     .region('southamerica-east1')
@@ -160,6 +168,81 @@ exports.redefinirSenhaComCodigo = functions
     return {
         success: true,
         message: "Senha redefinida com sucesso.",
+    };
+});
+// Funcao Callable: gera, persiste e envia um codigo MFA para o canal escolhido pelo usuario autenticado.
+exports.solicitarCodigoMfa = functions
+    .region('southamerica-east1')
+    .https.onCall(async (data, context) => {
+    const uid = context.auth?.uid;
+    if (!uid) {
+        throw new functions.https.HttpsError("unauthenticated", "Usuario nao autenticado.");
+    }
+    const canal = sanitizeMfaChannel(data.canal);
+    const usuarioSnapshot = await usuariosCollection.doc(uid).get();
+    const usuarioData = usuarioSnapshot.data();
+    if (!usuarioSnapshot.exists || !usuarioData) {
+        throw new functions.https.HttpsError("not-found", "Perfil do usuario nao encontrado.");
+    }
+    const fullName = typeof usuarioData.fullName === "string" ? usuarioData.fullName.trim() : "";
+    const email = typeof usuarioData.email === "string" ? usuarioData.email.trim() : "";
+    const telefone = typeof usuarioData.telefone === "string" ? usuarioData.telefone.trim() : "";
+    const mfaHabilitado = usuarioData.mfaHabilitado === true;
+    if (!mfaHabilitado) {
+        throw new functions.https.HttpsError("failed-precondition", "A autenticacao multifator nao esta habilitada para este usuario.");
+    }
+    if (canal === "email" && !email) {
+        throw new functions.https.HttpsError("failed-precondition", "O usuario nao possui e-mail cadastrado para MFA.");
+    }
+    if (canal === "sms" && !telefone) {
+        throw new functions.https.HttpsError("failed-precondition", "O usuario nao possui telefone cadastrado para MFA.");
+    }
+    const codigo = (0, mfa_code_1.gerarCodigoMfaSeisDigitos)();
+    await (0, mfa_code_1.salvarCodigoMfaNoFirebase)({
+        uid,
+        email,
+        telefone,
+        canal,
+        codigo,
+    });
+    if (canal === "email") {
+        await (0, mfa_code_1.enviarCodigoMfaPorEmail)({
+            to: email,
+            codigo,
+            nome: fullName,
+        });
+    }
+    else {
+        await (0, mfa_code_1.enviarCodigoMfaPorSms)({
+            to: telefone,
+            codigo,
+            nome: fullName,
+        });
+    }
+    return {
+        success: true,
+        canal,
+        message: `Codigo MFA enviado por ${canal === "email" ? "e-mail" : "SMS"}.`,
+    };
+});
+// Funcao Callable: verifica o codigo MFA fornecido pelo usuario autenticado, validando contra o armazenado.
+exports.verificarCodigoMfaCallable = functions
+    .region('southamerica-east1')
+    .https.onCall(async (data, context) => {
+    const uid = context.auth?.uid;
+    if (!uid) {
+        throw new functions.https.HttpsError("unauthenticated", "Usuario nao autenticado.");
+    }
+    const codigo = sanitizeRequiredString(data.codigo, "Codigo MFA");
+    const canal = sanitizeMfaChannel(data.canal);
+    await (0, mfa_code_1.verificarCodigoMfa)({
+        uid,
+        codigo,
+        canal,
+    });
+    return {
+        success: true,
+        message: "Codigo MFA verificado com sucesso.",
     };
 });
 // Normaliza a etapa/estágio (strings/nums diversos) para um conjunto reduzido de valores canônicos.
@@ -362,9 +445,7 @@ function normalizarPayload(data, emailAutenticado) {
 }
 // Hasheia a senha recebida com SHA-256 (com validação mínima de tamanho) antes de salvar no Firestore.
 function hashPassword(password) {
-    if (password.length < 6) {
-        throw new functions.https.HttpsError("invalid-argument", "A senha deve ter pelo menos 6 caracteres.");
-    }
+    validatePasswordPolicy(password);
     return (0, node_crypto_1.createHash)("sha256").update(password).digest("hex");
 }
 // Sanitiza e valida o código de recuperação (somente dígitos, com tamanho exato).
@@ -379,10 +460,22 @@ function sanitizeRecoveryCode(value) {
 // Sanitiza a nova senha e valida tamanho mínimo para redefinição.
 function sanitizeNewPassword(value) {
     const password = sanitizeRequiredString(value, "Nova senha");
-    if (password.length < 6) {
-        throw new functions.https.HttpsError("invalid-argument", "A nova senha deve ter pelo menos 6 caracteres.");
-    }
+    validatePasswordPolicy(password);
     return password;
+}
+function validatePasswordPolicy(password) {
+    const isValidLength = password.length >= passwordMinLength && password.length <= passwordMaxLength;
+    const hasUppercase = /[A-Z]/.test(password);
+    const hasLowercase = /[a-z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecialCharacter = /[^A-Za-z0-9]/.test(password);
+    if (!isValidLength ||
+        !hasUppercase ||
+        !hasLowercase ||
+        !hasNumber ||
+        !hasSpecialCharacter) {
+        throw new functions.https.HttpsError("invalid-argument", passwordPolicyMessage);
+    }
 }
 // Garante que um campo seja string não vazia (trim), senão lança HttpsError.
 function sanitizeRequiredString(value, fieldName) {
@@ -417,6 +510,13 @@ function sanitizeBirthDate(value) {
         throw new functions.https.HttpsError("invalid-argument", "Data de nascimento invalida.");
     }
     return admin.firestore.Timestamp.fromDate(parsedDate);
+}
+// Valida o canal escolhido para envio do desafio MFA.
+function sanitizeMfaChannel(value) {
+    if (value !== "email" && value !== "sms") {
+        throw new functions.https.HttpsError("invalid-argument", "Informe um canal MFA valido: email ou sms.");
+    }
+    return value;
 }
 // Cria um ID determinístico para o documento de recuperação de senha, derivado do e-mail (hash).
 function buildRecoveryDocId(email) {

@@ -5,7 +5,13 @@ import 'package:flutter/services.dart';
 import '../../models/usuario.dart';
 import '../../services/auth_service.dart';
 import '../../services/registration_service.dart';
-import 'setup_2fa_screen.dart';
+
+const int _senhaMinLength = 8;
+const int _senhaMaxLength = 20;
+final RegExp _senhaUppercaseRegex = RegExp(r'[A-Z]');
+final RegExp _senhaLowercaseRegex = RegExp(r'[a-z]');
+final RegExp _senhaNumberRegex = RegExp(r'[0-9]');
+final RegExp _senhaSpecialRegex = RegExp(r'[^A-Za-z0-9]');
 
 class CadastroScreen extends StatefulWidget {
   const CadastroScreen({super.key});
@@ -110,11 +116,9 @@ class _CadastroScreenState extends State<CadastroScreen> {
       return;
     }
 
-    if (senha.length < 6) {
-      _mostrarMensagem(
-        'A senha deve ter pelo menos 6 caracteres.',
-        isError: true,
-      );
+    final senhaErro = _validarSenha(senha);
+    if (senhaErro != null) {
+      _mostrarMensagem(senhaErro, isError: true);
       return;
     }
 
@@ -155,50 +159,8 @@ class _CadastroScreenState extends State<CadastroScreen> {
 
     try {
       await _registrationService.registerUser(usuario);
-      final newUser = _authService.currentUser;
 
       if (!mounted) return;
-
-      // Oferecer ativar 2FA após o registro
-      if (newUser != null) {
-        final ativar2FA = await _showDialogAtivar2FA();
-        if (ativar2FA && mounted) {
-          // Navegar para setup de 2FA com telefone do registro
-          try {
-            // Enviar código para o telefone registrado
-            debugPrint('[2FA] Tentando enviar código para +55$telefone');
-            final verificationId = await _authService.sendMFACode(
-              phoneNumber: '+55$telefone',
-            );
-            debugPrint('[2FA] Código enviado com sucesso. VerificationId: $verificationId');
-
-            if (mounted) {
-              Navigator.of(context).pushReplacement(
-                MaterialPageRoute(
-                  builder: (_) => Setup2FAScreen(
-                    verificationId: verificationId,
-                    phoneNumber: '+55$telefone',
-                    isFromRegistration: true,
-                  ),
-                ),
-              );
-            }
-            return;
-          } on FirebaseAuthException catch (e) {
-            debugPrint('[2FA] FirebaseAuthException: code=${e.code}, message=${e.message}');
-            _mostrarMensagem(
-              'Erro Firebase: ${e.message ?? e.code}',
-              isError: true,
-            );
-          } catch (e) {
-            debugPrint('[2FA] Erro geral: ${e.toString()}');
-            _mostrarMensagem(
-              'Erro ao enviar código 2FA: ${e.toString()}',
-              isError: true,
-            );
-          }
-        }
-      }
 
       // Fazer logout após oferecer 2FA
       try {
@@ -276,7 +238,7 @@ class _CadastroScreenState extends State<CadastroScreen> {
       case 'invalid-email':
         return 'O e-mail informado e invalido.';
       case 'weak-password':
-        return 'Escolha uma senha mais forte.';
+        return 'A senha deve ter entre 8 e 20 caracteres, com maiuscula, minuscula, numero e caractere especial.';
       case 'operation-not-allowed':
         return 'Cadastro por e-mail e senha nao esta habilitado.';
       case 'cpf-already-in-use':
@@ -356,6 +318,23 @@ class _CadastroScreenState extends State<CadastroScreen> {
   }
 
   bool get _senhaFoiPreenchida => _senhaController.text.isNotEmpty;
+  bool get _senhaTemMaiuscula =>
+      _senhaUppercaseRegex.hasMatch(_senhaController.text);
+  bool get _senhaTemMinuscula =>
+      _senhaLowercaseRegex.hasMatch(_senhaController.text);
+  bool get _senhaTemNumero => _senhaNumberRegex.hasMatch(_senhaController.text);
+  bool get _senhaTemEspecial =>
+      _senhaSpecialRegex.hasMatch(_senhaController.text);
+  bool get _senhaTemTamanhoValido {
+    final senha = _senhaController.text;
+    return senha.length >= _senhaMinLength && senha.length <= _senhaMaxLength;
+  }
+  bool get _senhaAtendePolitica =>
+      _senhaTemTamanhoValido &&
+      _senhaTemMaiuscula &&
+      _senhaTemMinuscula &&
+      _senhaTemNumero &&
+      _senhaTemEspecial;
 
   Color? get _corBordaNome {
     if (_nomeController.text.trim().isEmpty) return null;
@@ -384,13 +363,70 @@ class _CadastroScreenState extends State<CadastroScreen> {
   }
 
   Color? get _corBordaSenhas {
-    if (!_senhaFoiPreenchida || _confirmarSenhaController.text.isEmpty) {
+    if (_senhaFoiPreenchida && !_senhaAtendePolitica) {
+      return Colors.red;
+    }
+
+    if (_confirmarSenhaController.text.isEmpty) {
       return null;
     }
 
-    return _senhaController.text == _confirmarSenhaController.text
+    return _senhaController.text == _confirmarSenhaController.text &&
+            _senhaAtendePolitica
         ? Colors.green
         : Colors.red;
+  }
+
+  String? _validarSenha(String senha) {
+    if (senha.length < _senhaMinLength || senha.length > _senhaMaxLength) {
+      return 'A senha deve ter entre $_senhaMinLength e $_senhaMaxLength caracteres.';
+    }
+
+    if (!_senhaUppercaseRegex.hasMatch(senha)) {
+      return 'A senha deve conter pelo menos uma letra maiuscula.';
+    }
+
+    if (!_senhaLowercaseRegex.hasMatch(senha)) {
+      return 'A senha deve conter pelo menos uma letra minuscula.';
+    }
+
+    if (!_senhaNumberRegex.hasMatch(senha)) {
+      return 'A senha deve conter pelo menos um numero.';
+    }
+
+    if (!_senhaSpecialRegex.hasMatch(senha)) {
+      return 'A senha deve conter pelo menos um caractere especial.';
+    }
+
+    return null;
+  }
+
+  Widget _itemRegraSenha({
+    required bool atendida,
+    required String texto,
+  }) {
+    final color = atendida ? Colors.green : Colors.black45;
+
+    return Row(
+      children: [
+        Icon(
+          atendida ? Icons.check_box : Icons.check_box_outline_blank,
+          size: 18,
+          color: atendida ? Colors.green : Colors.black38,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            texto,
+            style: TextStyle(
+              fontSize: 13,
+              color: color,
+              fontWeight: atendida ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   InputDecoration _inputDecoration({
@@ -580,6 +616,59 @@ class _CadastroScreenState extends State<CadastroScreen> {
                         ? null
                         : () => setState(() => _obscureSenha = !_obscureSenha),
                   ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF7F8FA),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _senhaFoiPreenchida && !_senhaAtendePolitica
+                        ? Colors.red.shade200
+                        : const Color(0xFFE6E8EC),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Requisitos da senha',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    _itemRegraSenha(
+                      atendida: _senhaTemMaiuscula,
+                      texto: 'Exigir caractere maiusculo',
+                    ),
+                    const SizedBox(height: 8),
+                    _itemRegraSenha(
+                      atendida: _senhaTemMinuscula,
+                      texto: 'Exigir caractere minusculo',
+                    ),
+                    const SizedBox(height: 8),
+                    _itemRegraSenha(
+                      atendida: _senhaTemEspecial,
+                      texto: 'Exigir caractere especial',
+                    ),
+                    const SizedBox(height: 8),
+                    _itemRegraSenha(
+                      atendida: _senhaTemNumero,
+                      texto: 'Exigir caractere numerico',
+                    ),
+                    const SizedBox(height: 8),
+                    _itemRegraSenha(
+                      atendida: _senhaTemTamanhoValido,
+                      texto:
+                          'Tamanho entre $_senhaMinLength e $_senhaMaxLength caracteres',
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 20),

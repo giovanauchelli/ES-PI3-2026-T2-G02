@@ -5,7 +5,7 @@ import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
 import '../home/home_screen.dart';
 import 'password_recovery_screen.dart';
-import 'verify_otp_screen.dart';
+import 'sms_email_verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -70,6 +70,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
         profile = await _authService.ensureCurrentUserProfile();
 
+        if (profile == null) {
+          await _authService.signOut();
+          _mostrarErro('Não foi possivel carregar os dados da conta.');
+          return;
+        }
+
         if (!profile.userActive) {
           await _authService.signOut();
           _mostrarErro(
@@ -78,56 +84,35 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
 
-        try {
-          final isMfaEnabled = await _authService.isMultiFactorEnabled(user);
-          if (isMfaEnabled) {
-            final phone = await _authService.getPhoneForMFA(user);
-            if (phone == null || phone.isEmpty) {
-              await _authService.signOut();
-              _mostrarErro(
-                'Conta com 2FA ativado, mas telefone nao encontrado.',
-              );
-              return;
-            }
-
-            try {
-              final verificationId = await _authService.sendMFACode(
-                phoneNumber: phone,
-              );
-              if (mounted) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => VerifyOTPScreen(
-                      verificationId: verificationId,
-                      phoneNumber: phone,
-                    ),
-                  ),
-                );
-              }
-              return;
-            } on FirebaseAuthException catch (e) {
-              _mostrarErro('Erro ao enviar codigo 2FA: ${e.message}');
-              return;
-            }
-          }
-        } catch (e) {
-          debugPrint('Erro ao verificar status 2FA: $e');
-        }
-      }
-
-      if (mounted && user != null) {
-        final displayName = _authService.formatDisplayName(profile?.fullName);
-        final saudacao = displayName != null
-            ? 'Bem-vindo, $displayName${profile?.isAdmin == true ? ' (admin)' : ''}!'
-            : 'Bem-vindo, ${userCredential.user?.email}!';
-        _mostrarSucesso(saudacao);
-
-        await Future.delayed(const Duration(milliseconds: 1500));
         if (mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const HomeScreen()),
-            (route) => false,
-          );
+          if (profile.mfaHabilitado) {
+            _mostrarSucesso('Login validado. Escolha como receber o codigo.');
+
+            await Future.delayed(const Duration(milliseconds: 600));
+            if (!mounted) return;
+
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SmsEmailVerificationScreen(profile: profile!),
+              ),
+            );
+            return;
+          }
+
+          final displayName =
+              _authService.formatDisplayName(profile?.fullName);
+          final saudacao = displayName != null
+              ? 'Bem-vindo, $displayName${profile.isAdmin ? ' (admin)' : ''}!'
+              : 'Bem-vindo, ${userCredential.user?.email}!';
+          _mostrarSucesso(saudacao);
+
+          await Future.delayed(const Duration(milliseconds: 1500));
+          if (mounted) {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const HomeScreen()),
+              (route) => false,
+            );
+          }
         }
       }
     } on FirebaseAuthException catch (e) {
