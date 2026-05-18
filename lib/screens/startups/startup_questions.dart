@@ -93,8 +93,18 @@ class _PerguntasTabState extends State<PerguntasTab> {
               : StreamBuilder<List<Pergunta>>(
                   stream: _service.getPerguntasStream(startup.uid ?? ''),
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: Text(
+                          'Erro ao carregar perguntas.',
+                          style: TextStyle(fontSize: 14, color: Colors.black45),
+                        ),
+                      );
                     }
 
                     final perguntas = snapshot.data ?? [];
@@ -215,7 +225,8 @@ class _PerguntasTabState extends State<PerguntasTab> {
                                       Align(
                                         alignment: Alignment.centerRight,
                                         child: GestureDetector(
-                                          onTap: () => setState(() => _respostaAberta = null),
+                                          onTap: () => setState(
+                                              () => _respostaAberta = null),
                                           child: const Text(
                                             'Ocultar Resposta',
                                             style: TextStyle(
@@ -237,8 +248,6 @@ class _PerguntasTabState extends State<PerguntasTab> {
                   },
                 ),
         ),
-
-        // Campo de envio
         Container(
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -256,8 +265,10 @@ class _PerguntasTabState extends State<PerguntasTab> {
                   style: const TextStyle(fontSize: 13),
                   decoration: InputDecoration(
                     hintText: 'Enviar Mensagem',
-                    hintStyle: const TextStyle(fontSize: 13, color: Colors.black38),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    hintStyle:
+                        const TextStyle(fontSize: 13, color: Colors.black38),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide: const BorderSide(color: Color(0xFFDDDDDD)),
@@ -268,7 +279,8 @@ class _PerguntasTabState extends State<PerguntasTab> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
-                      borderSide: const BorderSide(color: Color(0xFF6C63FF), width: 1.5),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF6C63FF), width: 1.5),
                     ),
                     filled: true,
                     fillColor: const Color(0xFFF9F9F9),
@@ -280,8 +292,10 @@ class _PerguntasTabState extends State<PerguntasTab> {
                 onPressed: _enviando ? null : _enviarPergunta,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color.fromARGB(255, 5, 5, 79),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
                   elevation: 0,
                 ),
                 child: _enviando
@@ -290,12 +304,14 @@ class _PerguntasTabState extends State<PerguntasTab> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : const Text(
                         'Enviar',
-                        style: TextStyle(fontSize: 13, color: Colors.white),
+                        style:
+                            TextStyle(fontSize: 13, color: Colors.white),
                       ),
               ),
             ],
