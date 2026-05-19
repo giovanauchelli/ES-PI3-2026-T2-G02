@@ -12,10 +12,7 @@ class DocumentoService {
       .collection('documentos')
       .get();
 
-  print('DEBUG documentos encontrados: ${snap.docs.length}');
-  for (final doc in snap.docs) {
-    print('DEBUG doc: ${doc.id} → ${doc.data()}');
-  }
+  
 
   return snap.docs
       .map((doc) => Documento.fromFirestore(doc.id, doc.data()))
