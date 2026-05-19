@@ -11,7 +11,6 @@ class PerguntaService {
       .snapshots()
       .map((snapshot) {
         // ignore: avoid_print
-        print('Total docs: ${snapshot.docs.length}');
         return snapshot.docs
             .map((doc) => Pergunta.fromFirestore(doc.id, doc.data()))
             .toList();
