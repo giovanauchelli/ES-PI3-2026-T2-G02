@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/evento.dart';
 import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
+import '../../services/evento_service.dart';
 import '../balcao/balcao_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../profile/profile_screen.dart';
@@ -15,7 +17,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
+      backgroundColor: const Color(0xFFF5F5F7),
       body: SafeArea(
         child: Column(
           children: [
@@ -37,6 +39,45 @@ class HomeScreen extends StatelessWidget {
                     _Header(),
                     const SizedBox(height: 24),
                     const _SaldoCard(),
+                    const SizedBox(height: 28),
+
+                    // Meus Tokens
+                    const Text(
+                      'Meus tokens',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const _TokenItem(
+                      nome: 'AgroSense',
+                      tokens: '150 tokens',
+                      valor: 'R\$ 3.750',
+                      variacao: '+8,2%',
+                    ),
+                    const Divider(height: 1, color: Color(0xFFEEEEEE)),
+                    const _TokenItem(
+                      nome: 'MedConnect',
+                      tokens: '50 tokens',
+                      valor: 'R\$ 2.750',
+                      variacao: '+4,2%',
+                    ),
+                    const SizedBox(height: 28),
+
+                    // Atualizações (do Firestore)
+                    const Text(
+                      'Atualizações',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const _EventosList(),
+                    const SizedBox(height: 16),
                   ],
                 ),
               ),
@@ -49,6 +90,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+// ── Header ────────────────────────────────────────────────────
 class _Header extends StatefulWidget {
   @override
   State<_Header> createState() => _HeaderState();
@@ -117,11 +159,7 @@ class _HeaderState extends State<_Header> {
                           color: Color(0xFF6C63FF),
                         ),
                       )
-                    : const Icon(
-                        Icons.person,
-                        size: 22,
-                        color: Color(0xFF6C63FF),
-                      ),
+                    : const Icon(Icons.person, size: 22, color: Color(0xFF6C63FF)),
               ),
             ),
           ],
@@ -131,6 +169,7 @@ class _HeaderState extends State<_Header> {
   }
 }
 
+// ── Card Saldo ────────────────────────────────────────────────
 class _SaldoCard extends StatefulWidget {
   const _SaldoCard();
 
@@ -168,10 +207,7 @@ class _SaldoCardState extends State<_SaldoCard> {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                Color(0xFF9A1C63),
-                Color(0xFF1A237E),
-              ],
+              colors: [Color(0xFF9A1C63), Color(0xFF1A237E)],
             ),
           ),
           child: Column(
@@ -179,11 +215,7 @@ class _SaldoCardState extends State<_SaldoCard> {
             children: [
               const Text(
                 'Saldo Disponível',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white70,
-                  fontWeight: FontWeight.w500,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.white70, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 8),
               Text(
@@ -203,6 +235,237 @@ class _SaldoCardState extends State<_SaldoCard> {
   }
 }
 
+// ── Token Item ────────────────────────────────────────────────
+class _TokenItem extends StatelessWidget {
+  final String nome;
+  final String tokens;
+  final String valor;
+  final String variacao;
+
+  const _TokenItem({
+    required this.nome,
+    required this.tokens,
+    required this.valor,
+    required this.variacao,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(nome,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
+                const SizedBox(height: 3),
+                Text(tokens, style: const TextStyle(fontSize: 13, color: Colors.black45)),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(valor,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
+              const SizedBox(height: 3),
+              Text(variacao,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2E7D32))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Lista de Eventos (Firestore) ──────────────────────────────
+class _EventosList extends StatefulWidget {
+  const _EventosList();
+
+  @override
+  State<_EventosList> createState() => _EventosListState();
+}
+
+class _EventosListState extends State<_EventosList> {
+  final EventoService _eventoService = EventoService();
+  Future<List<Evento>>? _eventosFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _eventosFuture = _eventoService.listarEventos();
+  }
+
+  String _formatarTempo(DateTime data) {
+    final agora = DateTime.now();
+    final diff = data.difference(agora);
+
+    if (diff.isNegative) {
+      final passado = agora.difference(data);
+      if (passado.inMinutes < 60) return 'há ${passado.inMinutes}min';
+      if (passado.inHours < 24) return 'há ${passado.inHours}h';
+      return 'há ${passado.inDays}d';
+    } else {
+      if (diff.inHours < 24) return 'hoje';
+      if (diff.inDays == 1) return 'amanhã';
+      return 'em ${diff.inDays}d';
+    }
+  }
+
+  // Mapeia o campo 'tipo' do Firestore para cor/label do chip
+  ({Color bg, Color text, String label}) _chipConfig(String tipo) {
+    switch (tipo.toLowerCase()) {
+      case 'atualizacao':
+      case 'atualização':
+        return (
+          bg: const Color(0xFFE8E6FF),
+          text: const Color(0xFF6C63FF),
+          label: 'Atualização',
+        );
+      case 'evento':
+      default:
+        return (
+          bg: const Color(0xFFF3E8FF),
+          text: const Color(0xFFAB47BC),
+          label: 'Evento',
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Evento>>(
+      future: _eventosFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Color(0xFF6C63FF),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Não foi possível carregar os eventos.',
+              style: TextStyle(fontSize: 13, color: Colors.black45),
+            ),
+          );
+        }
+
+        final eventos = snapshot.data ?? [];
+
+        if (eventos.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Nenhum evento por enquanto.',
+              style: TextStyle(fontSize: 13, color: Colors.black45),
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            for (int i = 0; i < eventos.length; i++) ...[
+              if (i > 0) const SizedBox(height: 12),
+              _AtualizacaoCard(
+                tag: _chipConfig(eventos[i].tipo).label,
+                tagColor: _chipConfig(eventos[i].tipo).bg,
+                tagTextColor: _chipConfig(eventos[i].tipo).text,
+                tempo: _formatarTempo(eventos[i].data),
+                titulo: eventos[i].titulo,
+                descricao: eventos[i].descricao,
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ── Card Atualização ──────────────────────────────────────────
+class _AtualizacaoCard extends StatelessWidget {
+  final String tag;
+  final Color tagColor;
+  final Color tagTextColor;
+  final String tempo;
+  final String titulo;
+  final String descricao;
+
+  const _AtualizacaoCard({
+    required this.tag,
+    required this.tagColor,
+    required this.tagTextColor,
+    required this.tempo,
+    required this.titulo,
+    required this.descricao,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: tagColor,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  tag,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: tagTextColor,
+                  ),
+                ),
+              ),
+              Text(tempo, style: const TextStyle(fontSize: 12, color: Colors.black45)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(titulo,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87)),
+          const SizedBox(height: 4),
+          Text(descricao,
+              style: const TextStyle(fontSize: 13, color: Colors.black54, height: 1.4)),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Bottom Navigation ─────────────────────────────────────────
 class AppBottomNav extends StatelessWidget {
   final int currentIndex;
 
@@ -212,7 +475,6 @@ class AppBottomNav extends StatelessWidget {
     if (index == currentIndex) return;
 
     Widget screen;
-
     switch (index) {
       case 0:
         screen = const HomeScreen();
