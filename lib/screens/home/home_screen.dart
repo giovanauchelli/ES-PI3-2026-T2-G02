@@ -17,7 +17,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: const Color(0xFFFFFFFF),
       body: SafeArea(
         child: Column(
           children: [
@@ -223,7 +223,7 @@ class _SaldoCardState extends State<_SaldoCard> {
                 style: const TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: const Color(0xFFF5F5F7),
                   letterSpacing: -0.5,
                 ),
               ),
@@ -419,7 +419,7 @@ class _AtualizacaoCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFFF5F5F7),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
