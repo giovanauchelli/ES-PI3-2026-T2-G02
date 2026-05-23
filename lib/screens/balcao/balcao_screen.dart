@@ -1,446 +1,1536 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../../models/orderbook_models.dart';
 import '../home/home_screen.dart';
 
 class BalcaoScreen extends StatefulWidget {
-  final int abaInicial; // 0 = comprar, 1 = vender
+  final int abaInicial;
 
   const BalcaoScreen({super.key, this.abaInicial = 0});
 
   @override
   State<BalcaoScreen> createState() => _BalcaoScreenState();
 }
- 
+
 class _BalcaoScreenState extends State<BalcaoScreen> {
-  final List<Map<String, dynamic>> _startups = [
-    {'nome': 'AgroSense', 'variacao': '+8,2%', 'positivo': true},
-    {'nome': 'EduTech', 'variacao': '+3,2%', 'positivo': true},
-    {'nome': 'MedConnect', 'variacao': '-1,2%', 'positivo': false},
-  ];
- 
-  int _startupSelecionada = 0;
+  static const _buyColor = Color(0xFF2E7D32);
+  static const _buySoft = Color(0xFFF0F7F3);
+  static const _sellColor = Color(0xFFE53935);
+  static const _sellSoft = Color(0xFFFEF3F1);
+  static const _ink = Color(0xFF121212);
+  static const _muted = Color(0xFF6E6E73);
+  static const _card = Color(0xFFF8F8F3);
+  static const _border = Color(0xFFE2E3D8);
+  static const _mine = Color(0xFFE8F0FB);
+  static const _accent = Color(0xFF173B7A);
+
+  late OrderbookState _orderbookState;
+  late final TextEditingController _priceController;
+  late final TextEditingController _qtyController;
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _actionPanelKey = GlobalKey();
+
+  bool _submitting = false;
   bool _dropdownAberto = false;
-  int _tabSelecionada = 0;
- 
-  final _quantidadeController = TextEditingController(text: '10');
-  final _precoController = TextEditingController(text: '25,00');
- 
-  final List<Map<String, String>> _ofertas = [
-    {'compra': 'R\$ 24,90', 'compraQtd': '50 Tokens', 'venda': 'R\$ 25,00', 'vendaQtd': '30 Tokens'},
-    {'compra': 'R\$ 24,50', 'compraQtd': '120 Tokens', 'venda': 'R\$ 25,50', 'vendaQtd': '80 Tokens'},
-    {'compra': 'R\$ 24,00', 'compraQtd': '200 Tokens', 'venda': 'R\$ 26,00', 'vendaQtd': '150 Tokens'},
+
+  final List<Startup> _startups = [
+    Startup(id: '1', nome: 'AgroSense', precoEmissao: 2.50, tokensEmitidos: 300000),
+    Startup(id: '2', nome: 'EduTech', precoEmissao: 3.00, tokensEmitidos: 250000),
+    Startup(id: '3', nome: 'MedConnect', precoEmissao: 1.80, tokensEmitidos: 400000),
   ];
- 
-  double get _total {
-    final qtd = double.tryParse(_quantidadeController.text.replaceAll(',', '.')) ?? 0;
-    final preco = double.tryParse(_precoController.text.replaceAll(',', '.')) ?? 0;
-    return qtd * preco;
-  }
- 
+
+  int _startupSelecionada = 0;
+
   @override
   void initState() {
     super.initState();
-    _tabSelecionada = widget.abaInicial;
+    _priceController = TextEditingController();
+    _qtyController = TextEditingController();
+    _initializeOrderbook();
+    if (widget.abaInicial == 1) {
+      Future.microtask(() => _orderbookState.setTab('sell'));
+    }
   }
+
+  void _initializeOrderbook() {
+    _orderbookState = OrderbookState(
+      wallet: Wallet(brl: 5000, tokens: 0, tokensReserved: 0),
+      currentStartup: _startups[_startupSelecionada],
+    );
+  }
+
+  void _changeStartup(int index) {
+    final previousTab = _orderbookState.currentTab;
+    final previousOrderType = _orderbookState.orderType;
+    setState(() {
+      _startupSelecionada = index;
+      _dropdownAberto = false;
+      _clearInputs();
+      _orderbookState = OrderbookState(
+        wallet: _orderbookState.wallet,
+        currentStartup: _startups[index],
+      );
+      _orderbookState.currentTab = previousTab;
+      _orderbookState.orderType = previousOrderType;
+    });
+  }
+
+  void _clearInputs() {
+    _priceController.clear();
+    _qtyController.clear();
+    _orderbookState.inputPrice = 0;
+    _orderbookState.inputQty = 0;
+  }
+
+  void _fillFromBook(double price) {
+    _orderbookState.setOrderType('limit');
+    _priceController.text = price.toStringAsFixed(2).replaceAll('.', ',');
+    _orderbookState.inputPrice = price;
+    setState(() {});
+    Future.delayed(const Duration(milliseconds: 80), () {
+      final ctx = _actionPanelKey.currentContext;
+      if (ctx != null) {
+        Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
+      }
+    });
+  }
+
+  String _ticker(Startup s) {
+    final clean = s.nome.replaceAll(' ', '');
+    return clean.substring(0, clean.length.clamp(0, 4)).toUpperCase();
+  }
+
+  String _stateText(Startup s) =>
+      s.lastPrice == null ? 'Preço de emissão' : 'Mercado ativo';
+
   @override
   void dispose() {
-    _quantidadeController.dispose();
-    _precoController.dispose();
+    _priceController.dispose();
+    _qtyController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
- 
-  
- 
+
   @override
   Widget build(BuildContext context) {
-    final startup = _startups[_startupSelecionada];
- 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Column(
+    return AnimatedBuilder(
+      animation: _orderbookState,
+      builder: (context, _) {
+        final state = _orderbookState;
+        final startup = state.currentStartup;
+        final isPositive = startup.variation >= 0;
+
+        return Scaffold(
+          backgroundColor: const Color(0xFFFCFCF8),
+          body: SafeArea(
+            child: Column(
+              children: [
+                Container(
+                  height: 3,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0xFF173B7A), Color(0xFF2E7D32), Color(0xFFE53935)],
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildHero(state, startup, isPositive),
+                        const SizedBox(height: 14),
+                        _buildStartupSelector(startup),
+                        const SizedBox(height: 14),
+                        _buildWalletCards(state, startup),
+                        const SizedBox(height: 14),
+                        _buildSpreadBar(state),
+                        const SizedBox(height: 14),
+                        _buildOrderBookGrid(state),
+                        const SizedBox(height: 6),
+                        _buildBookLegend(),
+                        const SizedBox(height: 14),
+                        _buildActionPanel(state, startup),
+                        const SizedBox(height: 14),
+                        _buildTradeHistory(state),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: const AppBottomNav(currentIndex: 3),
+        );
+      },
+    );
+  }
+
+  // ── HERO ───────────────────────────────────────────────────────────────────
+
+  Widget _buildHero(OrderbookState state, Startup startup, bool isPositive) {
+    final progress = state.startupSaleProgress.clamp(0.0, 1.0);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFFFFF), Color(0xFFF4F6EE)],
+        ),
+        boxShadow: const [
+          BoxShadow(color: Color(0x12000000), blurRadius: 18, offset: Offset(0, 10)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(height: 20),
-            Container(
-              height: 2,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF6C63FF), Color(0xFFE040FB), Color(0xFFFF6B6B)],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Balcão de Tokens',
+                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: _ink),
+                    ),
+                    const SizedBox(height: 5),
+                    const Text(
+                      'Negociação simulada em tempo real.',
+                      style: TextStyle(fontSize: 12, color: _muted, height: 1.4),
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildChip('Emissão', state.formatPrice(startup.precoEmissao)),
+                        _buildChip('Vendido', '${(progress * 100).toStringAsFixed(1)}%'),
+                        _buildChip('Spread', state.spread > 0 ? state.formatPrice(state.spread) : '—'),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              const SizedBox(width: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const Text(
-                    'Balcão de Tokens',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: Colors.black87),
+                  Text(
+                    state.formatPrice(startup.displayPrice),
+                    style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: _ink),
                   ),
-                  const SizedBox(height: 20),
-                  const Text('Selecione a Startup', style: TextStyle(fontSize: 12, color: Colors.black45)),
                   const SizedBox(height: 6),
- 
-                  // ── Dropdown com borda gradiente ──
-                  GestureDetector(
-                    onTap: () => setState(() => _dropdownAberto = !_dropdownAberto),
-                    child: Container(
-                      padding: const EdgeInsets.all(1.2),
-                      decoration: BoxDecoration(
-                        color: const Color.fromARGB(69, 0, 0, 0),
-                        borderRadius: BorderRadius.only(
-                          topLeft: const Radius.circular(8),
-                          topRight: const Radius.circular(8),
-                          bottomLeft: Radius.circular(_dropdownAberto ? 0 : 8),
-                          bottomRight: Radius.circular(_dropdownAberto ? 0 : 8),
-                        ),
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(7),
-                            topRight: const Radius.circular(7),
-                            bottomLeft: Radius.circular(_dropdownAberto ? 0 : 7),
-                            bottomRight: Radius.circular(_dropdownAberto ? 0 : 7),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(startup['nome'],
-                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
-                                Text(startup['variacao'],
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: startup['positivo'] ? const Color(0xFF2E7D32) : const Color(0xFFE53935),
-                                    )),
-                              ],
-                            ),
-                           Icon(
-                              _dropdownAberto ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                              color: Colors.black45,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
- 
-                  // Lista dropdown
-                  if (_dropdownAberto)
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: const Color(0xFFDDDDDD)),
-                        borderRadius: const BorderRadius.only(
-                          bottomLeft: Radius.circular(8),
-                          bottomRight: Radius.circular(8),
-                        ),
-                        color: Colors.white,
-                      ),
-                      child: Column(
-                        children: List.generate(_startups.length, (i) {
-                          final s = _startups[i];
-                          final selected = i == _startupSelecionada;
-                          return GestureDetector(
-                            onTap: () => setState(() {
-                              _startupSelecionada = i;
-                              _dropdownAberto = false;
-                            }),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: selected ? const Color(0xFFF5F5F7) : Colors.white,
-                                border: const Border(top: BorderSide(color: Color(0xFFEEEEEE))),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(s['nome'],
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                                            color: Colors.black87,
-                                          )),
-                                      Text(s['variacao'],
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: s['positivo'] ? const Color(0xFF2E7D32) : const Color(0xFFE53935),
-                                          )),
-                                    ],
-                                  ),
-                                  if (selected)
-                                    const Icon(Icons.check, color: Colors.black45, size: 16),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
-                      ),
-                    ),
-                  const SizedBox(height: 20),
- 
-                  // ── Seção Comprar/Vender  ──
                   Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      border: Border.all(color: const Color.fromARGB(69, 0, 0, 0)),
-                      borderRadius: BorderRadius.circular(10),
+                      color: isPositive ? _buySoft : _sellSoft,
+                      borderRadius: BorderRadius.circular(999),
                     ),
-                    child: Column(
-                      children: [
-                        // Tabs
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => setState(() => _tabSelecionada = 0),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      bottom: BorderSide(
-                                        color: _tabSelecionada == 0 ? const Color(0xFF2E7D32) : const Color(0xFFEEEEEE),
-                                        width: 2,
-                                      ),
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    'Comprar',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                      color: _tabSelecionada == 0 ? const Color(0xFF2E7D32) : Colors.black45,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => setState(() => _tabSelecionada = 1),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    border: Border(
-                                      bottom: BorderSide(
-                                        color: _tabSelecionada == 1 ? const Color(0xFFE53935) : const Color(0xFFEEEEEE),
-                                        width: 2,
-                                      ),
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    'Vender',
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w600,
-                                      color: _tabSelecionada == 1 ? const Color(0xFFE53935) : Colors.black45,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
- 
-                        // Conteúdo interno
-                        Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('Quantidade', style: TextStyle(fontSize: 13, color: Colors.black45)),
-                                        const SizedBox(height: 6),
-                                        TextField(
-                                          controller: _quantidadeController,
-                                          keyboardType: TextInputType.number,
-                                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                                          onChanged: (_) => setState(() {}),
-                                          style: const TextStyle(fontSize: 14, color: Colors.black87),
-                                          decoration: _inputDec(),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text('Preço por token (R\$)', style: TextStyle(fontSize: 13, color: Colors.black45)),
-                                        const SizedBox(height: 6),
-                                        TextField(
-                                          controller: _precoController,
-                                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                          onChanged: (_) => setState(() {}),
-                                          style: const TextStyle(fontSize: 14, color: Colors.black87),
-                                          decoration: _inputDec(),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 14),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: const [
-                                  Text('Taxa Simulada', style: TextStyle(fontSize: 13, color: Colors.black45)),
-                                  Text('R\$ 0,00', style: TextStyle(fontSize: 13, color: Colors.black45)),
-                                ],
-                              ),
-                              const SizedBox(height: 10),
-                              const Divider(height: 1, color:  Color.fromARGB(69, 0, 0, 0)),
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text('Total',
-                                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black87)),
-                                  Text(
-                                    'R\$ ${_total.toStringAsFixed(2).replaceAll('.', ',')}',
-                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              const Text('Saldo disponível: R\$ 2.000,00',
-                                  style: TextStyle(fontSize: 13, color: Colors.black45)),
-                              const SizedBox(height: 16),
-                             SizedBox(
-                                width: double.infinity,
-                                height: 50,
-                                child: OutlinedButton(
-                                  onPressed: () {},
-                                  style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: Color.fromARGB(112, 0, 0, 0), width: 1.5),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    backgroundColor: Colors.white,
-                                  ),
-                                  child: Text(
-                                    _tabSelecionada == 0 ? 'Registrar oferta de compra' : 'Registrar oferta de venda',
-                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color.fromARGB(197, 0, 0, 0)),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      startup.variationText,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: isPositive ? _buyColor : _sellColor,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 28),
- 
-                  // ── Livro de ofertas com borda cinza ──
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: const Color(0xFFE0E0E0)),
-                      borderRadius: BorderRadius.circular(10),  
-                    ),
-                    child: Column(
-                      children: [
-                        // Cabeçalho
-                        Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: const BoxDecoration(
-                            border: Border(bottom: BorderSide(color: Color.fromARGB(69, 0, 0, 0))),
-                          ),
-                          child: Row(
-                            children: const [
-                              Expanded(
-                                child: Text('Compra',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2E7D32))),
-                              ),
-                              Expanded(
-                                child: Text('Venda',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFE53935))),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // Linhas
-                        ...List.generate(_ofertas.length, (i) {
-                          final o = _ofertas[i];
-                          return Container(
-                            padding: const EdgeInsets.symmetric(vertical: 13),
-                            decoration: BoxDecoration(
-                              border: i < _ofertas.length - 1
-                                  ? const Border(bottom: BorderSide(color:  Color.fromARGB(69, 0, 0, 0)))
-                                  : null,
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: RichText(
-                                    textAlign: TextAlign.center,
-                                    text: TextSpan(children: [
-                                      TextSpan(
-                                          text: '${o['compra']} ',
-                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF2E7D32))),
-                                      TextSpan(
-                                          text: '- ${o['compraQtd']}',
-                                          style: const TextStyle(fontSize: 13,fontWeight: FontWeight.w500, color: Colors.black45)),
-                                    ]),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: RichText(
-                                    textAlign: TextAlign.center,
-                                    text: TextSpan(children: [
-                                      TextSpan(
-                                          text: '${o['venda']} ',
-                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFE53935))),
-                                      TextSpan(
-                                          text: '- ${o['vendaQtd']}',
-                                          style: const TextStyle(fontSize: 13,fontWeight: FontWeight.w500, color: Colors.black45)),
-                                    ]),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
                 ],
               ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Text(
+                'Progresso da emissão',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _muted),
+              ),
+              const Spacer(),
+              Text(
+                '${state.formatQty(state.startupTokensVendidos)} / ${state.formatQty(startup.tokensEmitidos)}',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _ink),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              backgroundColor: const Color(0xFFEDEEDE),
+              valueColor: const AlwaysStoppedAnimation<Color>(_accent),
             ),
           ),
         ],
       ),
-      bottomNavigationBar: const AppBottomNav(currentIndex: 3),
     );
   }
- 
-  InputDecoration _inputDec() {
+
+  Widget _buildChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(color: _muted, fontSize: 10),
+          children: [
+            TextSpan(text: '$label\n'),
+            TextSpan(
+              text: value,
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── STARTUP SELECTOR ───────────────────────────────────────────────────────
+
+  Widget _buildStartupSelector(Startup startup) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Startup',
+          style: TextStyle(fontSize: 12, color: _muted, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 6),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _dropdownAberto ? _accent : _border),
+          ),
+          child: Column(
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(16),
+                onTap: () => setState(() => _dropdownAberto = !_dropdownAberto),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(
+                    children: [
+                      _TickerBadge(ticker: _ticker(startup), color: _accent),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              startup.nome,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: _ink,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              '${_stateText(startup)}  ·  ${_orderbookState.formatQty(startup.tokensEmitidos)} tokens',
+                              style: const TextStyle(fontSize: 11, color: _muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      AnimatedRotation(
+                        turns: _dropdownAberto ? 0.5 : 0,
+                        duration: const Duration(milliseconds: 200),
+                        child: const Icon(Icons.keyboard_arrow_down, color: _muted, size: 20),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_dropdownAberto)
+                ...List.generate(_startups.length, (index) {
+                  final item = _startups[index];
+                  final selected = index == _startupSelecionada;
+                  final positive = item.variation >= 0;
+                  return InkWell(
+                    onTap: () => _changeStartup(index),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        border: const Border(top: BorderSide(color: _border)),
+                        color: selected ? const Color(0xFFF4F7FB) : Colors.white,
+                      ),
+                      child: Row(
+                        children: [
+                          _TickerBadge(
+                            ticker: _ticker(item),
+                            color: selected ? _accent : _muted,
+                            size: 36,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item.nome,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: selected ? _accent : _ink,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '${_orderbookState.formatPrice(item.displayPrice)}  ·  ${item.variationText}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: positive ? _buyColor : _sellColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (selected)
+                            const Icon(Icons.check_circle_rounded, color: _accent, size: 18),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── WALLET CARDS ───────────────────────────────────────────────────────────
+
+  Widget _buildWalletCards(OrderbookState state, Startup startup) {
+    final ticker = _ticker(startup);
+    return Row(
+      children: [
+        Expanded(
+          child: _buildWalletCard(
+            'Disponível',
+            state.formatPrice(state.wallet.brl),
+            Icons.account_balance_wallet_outlined,
+            _accent,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildWalletCard(
+            'Em carteira',
+            '${state.formatQty(state.wallet.tokens)} $ticker',
+            Icons.token_outlined,
+            _buyColor,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildWalletCard(
+            'Reservado',
+            '${state.formatQty(state.wallet.tokensReserved)} $ticker',
+            Icons.lock_outline,
+            _muted,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWalletCard(String label, String value, IconData icon, Color iconColor) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: iconColor),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 14, color: _ink, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── SPREAD BAR ─────────────────────────────────────────────────────────────
+
+  Widget _buildSpreadBar(OrderbookState state) {
+    final bestBid = state.bestBid?.price;
+    final bestAsk = state.bestAsk?.price;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildSpreadItem(
+              'Melhor compra',
+              bestBid == null ? '—' : state.formatPrice(bestBid),
+              _buyColor,
+              CrossAxisAlignment.start,
+            ),
+          ),
+          GestureDetector(
+            onTap: () => _showInfoDialog(
+              context,
+              'O que é spread?',
+              'Spread é a diferença entre o menor preço de venda (ask) e o maior preço de compra (bid).\n\nQuanto menor o spread, mais líquido é o mercado — compradores e vendedores estão mais próximos de fechar negócio.',
+            ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _card,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'SPREAD',
+                        style: TextStyle(fontSize: 9, color: _muted, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                      ),
+                      const SizedBox(width: 3),
+                      Icon(Icons.info_outline_rounded, size: 10, color: _muted.withOpacity(0.7)),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    state.spread > 0 ? state.formatPrice(state.spread) : '—',
+                    style: const TextStyle(fontSize: 12, color: _ink, fontWeight: FontWeight.w800),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: _buildSpreadItem(
+              'Melhor venda',
+              bestAsk == null ? '—' : state.formatPrice(bestAsk),
+              _sellColor,
+              CrossAxisAlignment.end,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpreadItem(String label, String value, Color color, CrossAxisAlignment alignment) {
+    return Column(
+      crossAxisAlignment: alignment,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 3),
+        Text(value, style: TextStyle(fontSize: 14, color: color, fontWeight: FontWeight.w800)),
+      ],
+    );
+  }
+
+  // ── ORDER BOOK ─────────────────────────────────────────────────────────────
+
+  Widget _buildOrderBookGrid(OrderbookState state) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: _buildBookSide(state, 'buy')),
+        const SizedBox(width: 8),
+        Expanded(child: _buildBookSide(state, 'sell')),
+      ],
+    );
+  }
+
+  Widget _buildBookSide(OrderbookState state, String side) {
+    final isBuy = side == 'buy';
+    final orders = isBuy ? state.sortedBuyBook : state.sortedSellBook;
+    final headerColor = isBuy ? _buySoft : _sellSoft;
+    final headerTextColor = isBuy ? _buyColor : _sellColor;
+    final maxQty = orders.isEmpty ? 1 : orders.map((o) => o.qty).reduce((a, b) => a > b ? a : b);
+    final totalVol = orders.fold(0, (sum, o) => sum + o.qty);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              color: headerColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isBuy ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                  size: 14,
+                  color: headerTextColor,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  isBuy ? 'COMPRA' : 'VENDA',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: headerTextColor),
+                ),
+                const Spacer(),
+                Text(
+                  '${orders.length} ordens',
+                  style: TextStyle(fontSize: 10, color: headerTextColor.withOpacity(0.7)),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+            child: Row(
+              children: const [
+                Expanded(
+                  child: Text(
+                    'Preço',
+                    style: TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                Text(
+                  'Qtd',
+                  style: TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF0F0EA)),
+          if (orders.isEmpty)
+            _buildEmptyBookSide(isBuy)
+          else
+            ...orders.take(8).map((order) => _buildOrderRow(state, order, side, isBuy, maxQty)),
+          if (orders.isNotEmpty) ...[
+            const Divider(height: 1, color: Color(0xFFF0F0EA)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: [
+                  Text(
+                    'Vol. total',
+                    style: const TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w600),
+                  ),
+                  const Spacer(),
+                  Text(
+                    state.formatQty(totalVol),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: headerTextColor,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyBookSide(bool isBuy) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
+      child: Column(
+        children: [
+          Icon(
+            isBuy ? Icons.shopping_cart_outlined : Icons.sell_outlined,
+            size: 28,
+            color: const Color(0xFFCCCCCC),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Sem ordens de\n${isBuy ? 'compra' : 'venda'}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: Color(0xFFB9B9B9), height: 1.4),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isBuy ? 'Seja o primeiro a ofertar.' : 'Coloque uma ordem de venda.',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 10, color: Color(0xFFCCCCCC)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderRow(
+    OrderbookState state,
+    Order order,
+    String side,
+    bool isBuy,
+    int maxQty,
+  ) {
+    final isMine = state.myOrderIds.contains(order.id);
+    final priceColor = isBuy ? _buyColor : _sellColor;
+    final depthColor = isBuy ? _buyColor.withOpacity(0.09) : _sellColor.withOpacity(0.09);
+    final depthFraction = (order.qty / maxQty).clamp(0.0, 1.0);
+    final stopA = (depthFraction - 0.001).clamp(0.0, 1.0);
+
+    return GestureDetector(
+      onTap: () => _fillFromBook(order.price),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerRight,
+                  end: Alignment.centerLeft,
+                  stops: [stopA, depthFraction],
+                  colors: [depthColor, Colors.transparent],
+                ),
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: isMine ? _mine.withOpacity(0.7) : Colors.transparent,
+              border: const Border(top: BorderSide(color: Color(0xFFF0F0EA))),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        state.formatPrice(order.price),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: priceColor,
+                        ),
+                      ),
+                      if (order.isStartup)
+                        const Text('primária', style: TextStyle(fontSize: 9, color: _muted))
+                      else if (isMine)
+                        const Text(
+                          'sua ordem',
+                          style: TextStyle(fontSize: 9, color: _accent, fontWeight: FontWeight.w600),
+                        )
+                      else if (order.isPartial)
+                        const Text('parcial', style: TextStyle(fontSize: 9, color: _muted))
+                      else
+                        const Text(
+                          'toque p/ usar',
+                          style: TextStyle(fontSize: 9, color: Color(0xFFBBBBBB)),
+                        ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      state.formatQty(order.qty),
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _muted),
+                    ),
+                    if (isMine)
+                      GestureDetector(
+                        onTap: () {
+                          state.cancelOrder(order.id, side);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Ordem cancelada'),
+                              duration: Duration(milliseconds: 1800),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.only(top: 3),
+                          child: Text(
+                            'cancelar',
+                            style: TextStyle(fontSize: 9, color: _sellColor, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBookLegend() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Wrap(
+        spacing: 14,
+        runSpacing: 6,
+        children: [
+          _buildLegendItem(_mine, 'Suas ordens'),
+          _buildLegendItem(_buyColor.withOpacity(0.15), 'Volume de compra'),
+          _buildLegendItem(_sellColor.withOpacity(0.15), 'Volume de venda'),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.touch_app_outlined, size: 11, color: _muted),
+              const SizedBox(width: 4),
+              const Text(
+                'Toque em um preço para usá-lo',
+                style: TextStyle(fontSize: 10, color: _muted),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: _border, width: 0.5),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(label, style: const TextStyle(fontSize: 10, color: _muted)),
+      ],
+    );
+  }
+
+  // ── ACTION PANEL ───────────────────────────────────────────────────────────
+
+  Widget _buildActionPanel(OrderbookState state, Startup startup) {
+    final isBuy = state.currentTab == 'buy';
+    final isMarket = state.orderType == 'market';
+    final actionColor = isBuy ? _buyColor : _sellColor;
+    final actionSoft = isBuy ? _buySoft : _sellSoft;
+    final ticker = _ticker(startup);
+
+    final estimatedTotal = isMarket
+        ? state.estimateMarketTotal(state.currentTab, state.inputQty)
+        : (state.inputQty > 0 && state.inputPrice > 0
+            ? state.inputQty * state.inputPrice
+            : null);
+    final averagePrice = isMarket
+        ? state.estimateAverageMarketPrice(state.currentTab, state.inputQty)
+        : state.inputPrice > 0 ? state.inputPrice : null;
+
+    // balance usage for buy: cost / available_brl
+    final balanceUsageFraction = isBuy
+        ? (estimatedTotal != null && state.wallet.brl > 0
+            ? (estimatedTotal / state.wallet.brl).clamp(0.0, 1.0)
+            : 0.0)
+        : (state.inputQty > 0 && state.wallet.tokens > 0
+            ? (state.inputQty / state.wallet.tokens).clamp(0.0, 1.0)
+            : 0.0);
+    final isOverBudget = isBuy
+        ? (estimatedTotal != null && estimatedTotal > state.wallet.brl)
+        : (state.inputQty > state.wallet.tokens);
+
+    return Container(
+      key: _actionPanelKey,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Buy / Sell tabs
+          Row(
+            children: [
+              Expanded(
+                child: _buildTabButton(
+                  'Comprar',
+                  state.currentTab == 'buy',
+                  _buySoft,
+                  _buyColor,
+                  () => state.setTab('buy'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildTabButton(
+                  'Vender',
+                  state.currentTab == 'sell',
+                  _sellSoft,
+                  _sellColor,
+                  () => state.setTab('sell'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Order type
+          _buildSectionLabel('Tipo de ordem'),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _buildOrderTypeButton(
+                  'Market',
+                  'imediata',
+                  Icons.bolt_rounded,
+                  state.orderType == 'market',
+                  () => state.setOrderType('market'),
+                  infoLabel: 'O que é Market?',
+                  infoText: 'Uma Market Order executa imediatamente ao melhor preço disponível no book.\n\nVocê não define o preço — o sistema consome as melhores ofertas até completar sua quantidade.',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildOrderTypeButton(
+                  'Limit',
+                  'no book',
+                  Icons.price_check_rounded,
+                  state.orderType == 'limit',
+                  () => state.setOrderType('limit'),
+                  infoLabel: 'O que é Limit?',
+                  infoText: 'Uma Limit Order entra no livro de ordens com o preço que você definir.\n\nSua ordem fica aguardando até que alguém aceite negociar pelo seu preço — ou você cancela.',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Hint card
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: actionSoft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              isMarket
+                  ? 'Executa imediatamente contra as melhores ofertas do book.'
+                  : 'Entra no livro e aguarda uma contraparte aceitar seu preço.',
+              style: TextStyle(fontSize: 11, color: actionColor, height: 1.4),
+            ),
+          ),
+          const SizedBox(height: 14),
+          // Price field (limit only)
+          if (!isMarket) ...[
+            _buildSectionLabel('Preço por token (R\$)'),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _priceController,
+              onChanged: (v) => setState(() {
+                state.inputPrice = double.tryParse(v.replaceAll(',', '.')) ?? 0;
+              }),
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: _inputDec(hint: 'Ex: 2,50'),
+            ),
+            const SizedBox(height: 14),
+          ],
+          // Quantity field
+          _buildSectionLabel('Quantidade de tokens'),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _qtyController,
+            onChanged: (v) => setState(() {
+              state.inputQty = int.tryParse(v) ?? 0;
+            }),
+            keyboardType: TextInputType.number,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            decoration: _inputDec(hint: 'Ex: 100'),
+          ),
+          const SizedBox(height: 8),
+          // Quick fill
+          Row(
+            children: [
+              const Text('Rápido:', style: TextStyle(fontSize: 11, color: _muted, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 8),
+              ...[25, 50, 75, 100].map(
+                (pct) => Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: _buildQuickFillButton('$pct%', pct, state, isBuy),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Contextual balance hint
+          _buildBalanceHint(state, isBuy, ticker),
+          const SizedBox(height: 12),
+          // Balance usage bar
+          if (state.inputQty > 0 && (estimatedTotal != null || !isBuy)) ...[
+            _buildBalanceBar(balanceUsageFraction, isOverBudget, isBuy, state),
+            const SizedBox(height: 14),
+          ],
+          // Summary
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: isOverBudget ? _sellColor.withOpacity(0.4) : _border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Resumo da ordem',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _ink),
+                    ),
+                    if (isOverBudget) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: _sellSoft,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: const Text(
+                          'Saldo insuficiente',
+                          style: TextStyle(fontSize: 9, color: _sellColor, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _buildSummaryLine('Tipo', isMarket ? 'Market (imediata)' : 'Limit (aguardar book)'),
+                _buildSummaryLine(
+                  'Quantidade',
+                  state.inputQty > 0 ? '${state.formatQty(state.inputQty)} tokens' : '—',
+                ),
+                _buildSummaryLine(
+                  'Preço médio',
+                  averagePrice != null && averagePrice > 0 ? state.formatPrice(averagePrice) : '—',
+                ),
+                _buildSummaryLine(
+                  isBuy ? 'Custo total' : 'Recebimento',
+                  estimatedTotal != null && estimatedTotal > 0 ? state.formatPrice(estimatedTotal) : '—',
+                  highlight: estimatedTotal != null && estimatedTotal > 0,
+                  alertColor: isOverBudget,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          // Submit button
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: (_submitting || isOverBudget)
+                  ? null
+                  : () async {
+                      setState(() => _submitting = true);
+                      final success = await state.submitOrder();
+                      if (!mounted) return;
+                      setState(() => _submitting = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            success
+                                ? (isBuy ? 'Compra enviada com sucesso' : 'Venda enviada com sucesso')
+                                : 'Não foi possível processar a ordem',
+                          ),
+                          duration: const Duration(milliseconds: 2200),
+                          backgroundColor: success ? actionColor : _sellColor,
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                      if (success) _clearInputs();
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: actionColor,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: isOverBudget ? _sellColor.withOpacity(0.3) : actionColor.withOpacity(0.4),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(
+                      isOverBudget
+                          ? 'Saldo insuficiente'
+                          : (isBuy ? 'Comprar tokens' : 'Vender tokens'),
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBalanceHint(OrderbookState state, bool isBuy, String ticker) {
+    if (isBuy) {
+      return Row(
+        children: [
+          const Icon(Icons.info_outline, size: 12, color: _muted),
+          const SizedBox(width: 5),
+          Text(
+            'Disponível: ${state.formatPrice(state.wallet.brl)}',
+            style: const TextStyle(fontSize: 11, color: _muted),
+          ),
+        ],
+      );
+    }
+    return Row(
+      children: [
+        const Icon(Icons.info_outline, size: 12, color: _muted),
+        const SizedBox(width: 5),
+        Text(
+          'Disponível: ${state.formatQty(state.wallet.tokens)} $ticker livres',
+          style: const TextStyle(fontSize: 11, color: _muted),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBalanceBar(double fraction, bool isOver, bool isBuy, OrderbookState state) {
+    final barColor = isOver ? _sellColor : (isBuy ? _buyColor : _sellColor);
+    final pctText = '${(fraction * 100).toStringAsFixed(0)}% do ${isBuy ? 'saldo' : 'portfólio'}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Uso do ${isBuy ? 'saldo' : 'portfólio'}',
+              style: const TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            Text(
+              pctText,
+              style: TextStyle(
+                fontSize: 10,
+                color: isOver ? _sellColor : _muted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            child: LinearProgressIndicator(
+              value: fraction.clamp(0.0, 1.0),
+              minHeight: 6,
+              backgroundColor: const Color(0xFFEDEEDE),
+              valueColor: AlwaysStoppedAnimation<Color>(barColor),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildQuickFillButton(String label, int pct, OrderbookState state, bool isBuy) {
+    return GestureDetector(
+      onTap: () {
+        int qty;
+        if (isBuy) {
+          final price = state.orderType == 'market'
+              ? (state.bestAsk?.price ?? state.currentStartup.precoEmissao)
+              : (state.inputPrice > 0 ? state.inputPrice : state.currentStartup.precoEmissao);
+          qty = price > 0 ? ((state.wallet.brl * pct / 100) / price).floor() : 0;
+        } else {
+          qty = (state.wallet.tokens * pct / 100).floor();
+        }
+        if (qty > 0) {
+          _qtyController.text = qty.toString();
+          setState(() => state.inputQty = qty);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: _card,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _border),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: _ink, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionLabel(String text) {
+    return Text(text, style: const TextStyle(fontSize: 12, color: _muted, fontWeight: FontWeight.w700));
+  }
+
+  Widget _buildSummaryLine(
+    String label,
+    String value, {
+    bool highlight = false,
+    bool alertColor = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: _muted, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 11,
+              color: alertColor ? _sellColor : (highlight ? _accent : _ink),
+              fontWeight: (highlight || alertColor) ? FontWeight.w800 : FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton(
+    String label,
+    bool isActive,
+    Color background,
+    Color foreground,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isActive ? background : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: isActive ? foreground : _border),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: isActive ? foreground : _muted,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderTypeButton(
+    String label,
+    String caption,
+    IconData icon,
+    bool isActive,
+    VoidCallback onTap, {
+    required String infoLabel,
+    required String infoText,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFFF6F6F0) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: isActive ? _ink : _border),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 14, color: isActive ? _ink : _muted),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: isActive ? _ink : _muted,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Text(
+              '· $caption',
+              style: const TextStyle(fontSize: 10, color: _muted),
+            ),
+            const SizedBox(width: 4),
+            GestureDetector(
+              onTap: () => _showInfoDialog(context, infoLabel, infoText),
+              child: Icon(Icons.help_outline_rounded, size: 13, color: _muted.withOpacity(0.7)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── TRADE HISTORY ──────────────────────────────────────────────────────────
+
+  Widget _buildTradeHistory(OrderbookState state) {
+    final trades = state.trades.reversed.toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Row(
+              children: [
+                const Text(
+                  'Histórico de trades',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _ink),
+                ),
+                const Spacer(),
+                if (trades.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _card,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${trades.length} trade${trades.length > 1 ? 's' : ''}',
+                      style: const TextStyle(fontSize: 11, color: _muted, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (trades.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              color: _card,
+              child: Row(
+                children: const [
+                  Expanded(child: Text('Horário', style: TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w700))),
+                  Expanded(child: Text('Tipo', style: TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w700))),
+                  Expanded(child: Text('Preço', textAlign: TextAlign.center, style: TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w700))),
+                  Expanded(child: Text('Qtd', textAlign: TextAlign.right, style: TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w700))),
+                ],
+              ),
+            ),
+            ...trades.asMap().entries.map((entry) {
+              final index = entry.key;
+              final trade = entry.value;
+              final isBuy = trade.side == 'compra';
+              final sideColor = isBuy ? _buyColor : _sellColor;
+
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: index == 0 ? const Color(0xFFEDF3FD) : Colors.transparent,
+                  border: const Border(top: BorderSide(color: Color(0xFFF0F0EA))),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        trade.time,
+                        style: const TextStyle(fontSize: 11, color: _muted),
+                      ),
+                    ),
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(right: 5),
+                            decoration: BoxDecoration(
+                              color: sideColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Text(
+                            isBuy ? 'Compra' : 'Venda',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: sideColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        state.formatPrice(trade.price),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 11, color: _ink, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '${state.formatQty(trade.qty)} tkn',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(fontSize: 11, color: _muted),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ] else
+            Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                children: const [
+                  Icon(Icons.swap_horiz_rounded, size: 32, color: Color(0xFFCCCCCC)),
+                  SizedBox(height: 10),
+                  Text(
+                    'Nenhuma trade executada ainda',
+                    style: TextStyle(fontSize: 13, color: Color(0xFFB9B9B9)),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Execute uma Market ou Limit order para começar.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: Color(0xFFCCCCCC)),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── HELPERS ────────────────────────────────────────────────────────────────
+
+  void _showInfoDialog(BuildContext context, String title, String body) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _ink)),
+        content: Text(body, style: const TextStyle(fontSize: 13, color: _muted, height: 1.55)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Entendi', style: TextStyle(fontWeight: FontWeight.w700, color: _accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _inputDec({String? hint}) {
     return InputDecoration(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color.fromARGB(125, 0, 0, 0))),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color.fromARGB(69, 0, 0, 0))),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color.fromARGB(255, 6, 1, 83), width: 1.5)),
+      hintText: hint,
+      hintStyle: const TextStyle(color: Color(0xFF9A9A9A), fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _accent, width: 1.5),
+      ),
       filled: true,
       fillColor: Colors.white,
+    );
+  }
+}
+
+// ── TICKER BADGE ────────────────────────────────────────────────────────────
+
+class _TickerBadge extends StatelessWidget {
+  final String ticker;
+  final Color color;
+  final double size;
+
+  const _TickerBadge({required this.ticker, required this.color, this.size = 40});
+
+  @override
+  Widget build(BuildContext context) {
+    final label = ticker.substring(0, ticker.length.clamp(0, 3));
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: size * 0.28,
+          fontWeight: FontWeight.w900,
+          color: color,
+          letterSpacing: -0.5,
+        ),
+      ),
     );
   }
 }
