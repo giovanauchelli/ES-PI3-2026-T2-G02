@@ -221,7 +221,20 @@ class AuthService {
         return null;
       }
 
-      return UserProfile.fromMap(uid, data);
+      final merged = Map<String, dynamic>.from(data);
+
+      try {
+        final walletSnap = await _firestore
+            .collection('users')
+            .doc(uid)
+            .collection('wallet')
+            .doc('main')
+            .get();
+        final saldoBrl = (walletSnap.data()?['saldo_brl'] as num?)?.toDouble();
+        if (saldoBrl != null) merged['saldo'] = saldoBrl;
+      } catch (_) {}
+
+      return UserProfile.fromMap(uid, merged);
     } on FirebaseException catch (e) {
       debugPrint(
         '[AuthService] getUserProfile error: code=${e.code}, message=${e.message}',

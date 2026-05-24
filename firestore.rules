@@ -31,6 +31,27 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    match /startups/{startupId}/{document=**} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // New balcão system — wallet and positions per user
+    match /users/{userId}/wallet/{doc} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /users/{userId}/positions/{startupId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /orders/{orderId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     match /usuarios/{userId} {
       allow create: if isOwner(userId) && isDefaultUserProfile();
       allow read: if isOwner(userId);

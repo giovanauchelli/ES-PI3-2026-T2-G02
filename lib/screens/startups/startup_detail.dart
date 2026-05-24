@@ -1,4 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../balcao/balcao_screen.dart';
 import '../startups/startup_overview.dart';
 import '../startups/startup_society.dart';
 import '../startups/startup_documents.dart';
@@ -25,21 +28,69 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
   Startup? _startup;
   bool _carregando = true;
   bool _comprando = false;
+  int _tokensNaCarteira = 0;
+  String? _erroCarregamento;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _carregarStartup();
+    _carregarPosicao();
   }
 
   Future<void> _carregarStartup() async {
     try {
       final startup = await _service.getStartup(widget.startupUid);
-      if (mounted) setState(() { _startup = startup; _carregando = false; });
-    } catch (_) {
-      if (mounted) setState(() => _carregando = false);
+      if (mounted) {
+        setState(() {
+          _startup = startup;
+          _carregando = false;
+          _erroCarregamento = startup == null ? 'Startup não encontrada.' : null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _carregando = false;
+          _erroCarregamento = 'Erro ao carregar dados: $e';
+        });
+      }
     }
+  }
+
+  Future<void> _carregarPosicao() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    // New balcão system
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('positions')
+          .doc(widget.startupUid)
+          .get();
+      if (snap.exists) {
+        final tokens = (snap.data()?['tokens_livres'] as num?)?.toInt() ?? 0;
+        if (mounted) setState(() => _tokensNaCarteira = tokens);
+        return;
+      }
+    } catch (_) {}
+
+    // Fallback: old comprarTokensStartup portfolio
+    try {
+      final legacySnap = await FirebaseFirestore.instance
+          .collection('usuarios')
+          .doc(uid)
+          .get();
+      final portfolio =
+          legacySnap.data()?['portfolio'] as Map<String, dynamic>? ?? {};
+      final posData =
+          portfolio[widget.startupUid] as Map<String, dynamic>? ?? {};
+      final tokens = (posData['quantidade'] as num?)?.toInt() ?? 0;
+      if (mounted) setState(() => _tokensNaCarteira = tokens);
+    } catch (_) {}
   }
 
   @override
@@ -261,6 +312,27 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       child: Center(child: CircularProgressIndicator()),
                     )
+                  else if (_erroCarregamento != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _erroCarregamento!,
+                            style: const TextStyle(fontSize: 13, color: Colors.red),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () {
+                              setState(() { _carregando = true; _erroCarregamento = null; });
+                              _carregarStartup();
+                            },
+                            child: const Text('Tentar novamente'),
+                          ),
+                        ],
+                      ),
+                    )
                   else ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
@@ -391,18 +463,28 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: null,
+                              onPressed: () => Navigator.push(
+                                context,
+                                PageRouteBuilder(
+                                  pageBuilder: (_, __, ___) =>
+                                      const BalcaoScreen(),
+                                  transitionDuration: Duration.zero,
+                                  reverseTransitionDuration: Duration.zero,
+                                ),
+                              ),
                               style: ElevatedButton.styleFrom(
-                                disabledBackgroundColor: const Color(0xFFCBD2E8),
-                                disabledForegroundColor: const Color(0xFF47536D),
+                                backgroundColor: const Color(0xFF1A237E),
+                                foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8)),
                                 padding: const EdgeInsets.symmetric(vertical: 12),
                                 elevation: 0,
                               ),
-                              child: const Text(
-                                'Venda em breve',
-                                style: TextStyle(
+                              child: Text(
+                                _tokensNaCarteira > 0
+                                    ? 'Vender (${_tokensNaCarteira})'
+                                    : 'Negociar',
+                                style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                 ),

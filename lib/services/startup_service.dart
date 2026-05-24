@@ -1,5 +1,4 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import '../models/startup.dart';
 
 class StartupCatalogItem {
@@ -20,73 +19,37 @@ class StartupCatalogItem {
     required this.capital,
     required this.preco,
   });
-
-  factory StartupCatalogItem.fromMap(Map<String, dynamic> map, {String uid = ''}) {
-    return StartupCatalogItem(
-      uid: uid,
-      nome: _readString(map['nome']),
-      descricao: _readString(map['descricao']),
-      status: _readString(map['status']),
-      tokens: _readString(map['tokens']),
-      capital: _readString(map['capital']),
-      preco: _readString(map['preco']),
-    );
-  }
 }
+
+typedef _Balcao = ({Map<String, dynamic> config, Map<String, dynamic> state});
 
 class StartupService {
   StartupService({
-    FirebaseFunctions? functions,
     FirebaseFirestore? firestore,
     String collectionPath = 'startups',
-  }) : _functions = functions ?? FirebaseFunctions.instance,
-       _firestore = firestore ?? FirebaseFirestore.instance,
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _collectionPath = collectionPath;
 
-  final FirebaseFunctions _functions;
   final FirebaseFirestore _firestore;
   final String _collectionPath;
 
-  // ── Catálogo (existente) ──────────────────────────────────────
+  // ── Catálogo ──────────────────────────────────────────────────
+  // `balcao` é subcoleção: startups/{id}/balcao/{config|state}.
+  // Pra cada startup faz raiz + config + state em paralelo.
   Future<List<StartupCatalogItem>> listarStartups() async {
-    try {
-      return await _listarViaCallable();
-    } on FirebaseFunctionsException {
-      return _listarDiretoFirestore();
-    } catch (_) {
-      return _listarDiretoFirestore();
-    }
-  }
-
-  Future<List<StartupCatalogItem>> _listarViaCallable() async {
-    final callable = _functions.httpsCallable('listarStartups');
-    final result = await callable.call(<String, dynamic>{});
-    final data = result.data as Object?;
-
-    if (data is! Map<Object?, Object?>) return const [];
-
-    final startups = data['startups'];
-    if (startups is! List<Object?>) return const [];
-
-    return startups
-        .whereType<Map<Object?, Object?>>()
-        .map((item) => StartupCatalogItem.fromMap(_toStringDynamicMap(item)))
-        .toList();
-  }
-
-  Future<List<StartupCatalogItem>> _listarDiretoFirestore() async {
     final snapshot = await _firestore.collection(_collectionPath).get();
 
-    return snapshot.docs.map((doc) {
+    return Future.wait(snapshot.docs.map((doc) async {
       final data = doc.data();
+      final balcao = await _loadBalcao(doc.reference);
 
-      final totalTokens = _readNum(
-        data['totalTokensEmitidos'] ?? data['tokensEmitidos'],
-      );
+      final totalTokens = _readNum(balcao.config['tokens_emitidos']);
       final capitalAportado = _readNum(
-        data['cptAportado'] ?? data['capitalAportado'],
+        balcao.state['cptAportado'] ?? balcao.state['capitalAportado'],
       );
-      final precoToken = _readNum(data['precoToken'] ?? data['preco_token']);
+      final precoEmissao = _readNum(balcao.config['preco_emissao']);
+      final lastPrice = _readNum(balcao.state['last_price']);
+      final displayPreco = lastPrice > 0 ? lastPrice : precoEmissao;
 
       return StartupCatalogItem(
         uid: doc.id,
@@ -100,20 +63,66 @@ class StartupService {
         ),
         tokens: _formatCompact(totalTokens),
         capital: 'R\$ ${_formatCompact(capitalAportado)}',
-        preco: 'R\$ ${precoToken.toStringAsFixed(2).replaceAll('.', ',')}',
+        preco: 'R\$ ${displayPreco.toStringAsFixed(2).replaceAll('.', ',')}',
       );
-    }).toList();
+    }));
   }
 
-  // ── Detalhe da startup (novo) ─────────────────────────────────
+  // ── Detalhe da startup ────────────────────────────────────────
   Future<Startup?> getStartup(String uid) async {
+    if (uid.isEmpty) return null;
     final doc = await _firestore.collection(_collectionPath).doc(uid).get();
     if (!doc.exists || doc.data() == null) return null;
-    return Startup.fromFirestore(doc.id, doc.data()!);
+
+    final data = Map<String, dynamic>.from(doc.data()!);
+    final balcao = await _loadBalcao(doc.reference);
+
+    // Mescla balcao/config|state em chaves raiz pra Startup.fromFirestore.
+    if (balcao.config['preco_emissao'] != null) {
+      data['precoToken'] = balcao.config['preco_emissao'];
+    }
+    if (balcao.config['tokens_emitidos'] != null) {
+      data['totalTokensEmitidos'] = balcao.config['tokens_emitidos'];
+    }
+    if (balcao.config['capitalMeta'] != null) {
+      data['capitalMeta'] = balcao.config['capitalMeta'];
+    }
+    if (balcao.state['cptAportado'] != null) {
+      data['cptAportado'] = balcao.state['cptAportado'];
+    }
+    if (balcao.state['nmrInvestidores'] != null) {
+      data['nmrInvestidores'] = balcao.state['nmrInvestidores'];
+    }
+
+    final lastPrice = _readNum(balcao.state['last_price']);
+    if (lastPrice > 0) data['precoToken'] = lastPrice;
+
+    return Startup.fromFirestore(doc.id, data);
+  }
+
+  Future<_Balcao> _loadBalcao(DocumentReference docRef) async {
+    final col = docRef.collection('balcao');
+    final snaps = await Future.wait([
+      col.doc('config').get(),
+      col.doc('state').get(),
+    ]);
+    return (
+      config: snaps[0].exists ? _toMap(snaps[0].data()) : <String, dynamic>{},
+      state:  snaps[1].exists ? _toMap(snaps[1].data()) : <String, dynamic>{},
+    );
   }
 }
 
-// ── Funções auxiliares (sem alteração) ───────────────────────────
+// ── Funções auxiliares ───────────────────────────────────────────
+Map<String, dynamic> _toMap(dynamic value) {
+  if (value == null) return {};
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    try { return Map<String, dynamic>.from(value); } catch (_) {}
+  }
+  return {};
+}
+
 String _readString(Object? value, {String fallback = ''}) {
   if (value is String) return value;
   if (value is num) return value.toString();
@@ -126,10 +135,6 @@ double _readNum(Object? value, {double fallback = 0}) {
     return double.tryParse(value.replaceAll(',', '.').trim()) ?? fallback;
   }
   return fallback;
-}
-
-Map<String, dynamic> _toStringDynamicMap(Map<Object?, Object?> source) {
-  return source.map((key, value) => MapEntry(key.toString(), value));
 }
 
 String _normalizeStatus(Object? value) {

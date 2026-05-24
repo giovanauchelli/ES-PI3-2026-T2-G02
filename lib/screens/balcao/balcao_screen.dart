@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/orderbook_models.dart';
+import '../../services/balcao_service.dart';
 import '../home/home_screen.dart';
 
 class BalcaoScreen extends StatefulWidget {
@@ -31,33 +34,99 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _actionPanelKey = GlobalKey();
 
+  final _service = BalcaoService();
+
   bool _submitting = false;
   bool _dropdownAberto = false;
+  bool _loadingStartups = true;
 
-  final List<Startup> _startups = [
-    Startup(id: '1', nome: 'AgroSense', precoEmissao: 2.50, tokensEmitidos: 300000),
-    Startup(id: '2', nome: 'EduTech', precoEmissao: 3.00, tokensEmitidos: 250000),
-    Startup(id: '3', nome: 'MedConnect', precoEmissao: 1.80, tokensEmitidos: 400000),
-  ];
-
+  List<Startup> _startups = [];
   int _startupSelecionada = 0;
+
+  // Stream subscriptions – cancelled on startup change and dispose
+  StreamSubscription<(List<Order>, List<Order>)>? _ordersSub;
+  StreamSubscription<List<Trade>>? _tradesSub;
+  StreamSubscription<({double? lastPrice, int tokensVendidos, int tokensEmitidos})>? _stateSub;
+  StreamSubscription<Wallet>? _walletSub;
+  StreamSubscription<({int tokensLivres, int tokensReservados})>? _positionSub;
 
   @override
   void initState() {
     super.initState();
     _priceController = TextEditingController();
     _qtyController = TextEditingController();
-    _initializeOrderbook();
-    if (widget.abaInicial == 1) {
-      Future.microtask(() => _orderbookState.setTab('sell'));
+    _orderbookState = OrderbookState(
+      wallet: Wallet(brl: 0, tokens: 0, tokensReserved: 0),
+      currentStartup: Startup(id: '', nome: '...', sigla: '...', precoEmissao: 0, tokensEmitidos: 0),
+    );
+    _loadStartups();
+  }
+
+  Future<void> _loadStartups() async {
+    try {
+      final startups = await _service.fetchStartups();
+      if (!mounted) return;
+      setState(() {
+        _startups = startups;
+        _loadingStartups = false;
+      });
+      if (startups.isNotEmpty) {
+        _applyStartup(0, initialTab: widget.abaInicial == 1 ? 'sell' : 'buy');
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingStartups = false);
     }
   }
 
-  void _initializeOrderbook() {
-    _orderbookState = OrderbookState(
-      wallet: Wallet(brl: 5000, tokens: 0, tokensReserved: 0),
-      currentStartup: _startups[_startupSelecionada],
-    );
+  void _applyStartup(int index, {String? initialTab}) {
+    if (index >= _startups.length) return;
+    final startup = _startups[index];
+
+    // Cancel previous subscriptions
+    _cancelSubscriptions();
+    _clearInputs();
+
+    _orderbookState.changeStartup(startup);
+    if (initialTab != null) _orderbookState.setTab(initialTab);
+
+    final startupId = startup.id;
+
+    _walletSub = _service.watchWallet().listen((w) {
+      if (mounted) _orderbookState.updateWallet(w);
+    });
+
+    _positionSub = _service.watchPosition(startupId).listen((pos) {
+      if (mounted) {
+        _orderbookState.updatePosition(pos.tokensLivres, pos.tokensReservados);
+      }
+    });
+
+    _ordersSub = _service.watchOrders(startupId).listen((books) {
+      if (mounted) _orderbookState.updateBothBooks(books.$1, books.$2);
+    });
+
+    _tradesSub = _service.watchTrades(startupId).listen((t) {
+      if (mounted) _orderbookState.updateTrades(t);
+    });
+
+    _stateSub = _service.watchBalcaoState(startupId).listen((s) {
+      if (mounted) {
+        _orderbookState.updateStartupState(s.lastPrice, s.tokensVendidos);
+      }
+    });
+  }
+
+  void _cancelSubscriptions() {
+    _ordersSub?.cancel();
+    _tradesSub?.cancel();
+    _stateSub?.cancel();
+    _walletSub?.cancel();
+    _positionSub?.cancel();
+    _ordersSub = null;
+    _tradesSub = null;
+    _stateSub = null;
+    _walletSub = null;
+    _positionSub = null;
   }
 
   void _changeStartup(int index) {
@@ -66,14 +135,9 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
     setState(() {
       _startupSelecionada = index;
       _dropdownAberto = false;
-      _clearInputs();
-      _orderbookState = OrderbookState(
-        wallet: _orderbookState.wallet,
-        currentStartup: _startups[index],
-      );
-      _orderbookState.currentTab = previousTab;
-      _orderbookState.orderType = previousOrderType;
     });
+    _applyStartup(index, initialTab: previousTab);
+    _orderbookState.setOrderType(previousOrderType);
   }
 
   void _clearInputs() {
@@ -96,16 +160,14 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
     });
   }
 
-  String _ticker(Startup s) {
-    final clean = s.nome.replaceAll(' ', '');
-    return clean.substring(0, clean.length.clamp(0, 4)).toUpperCase();
-  }
+  String _ticker(Startup s) => s.sigla;
 
   String _stateText(Startup s) =>
       s.lastPrice == null ? 'Preço de emissão' : 'Mercado ativo';
 
   @override
   void dispose() {
+    _cancelSubscriptions();
     _priceController.dispose();
     _qtyController.dispose();
     _scrollController.dispose();
@@ -114,6 +176,30 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loadingStartups) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFCFCF8),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Container(
+                height: 3,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF173B7A), Color(0xFF2E7D32), Color(0xFFE53935)],
+                  ),
+                ),
+              ),
+              const Expanded(
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+          ),
+        ),
+        bottomNavigationBar: const AppBottomNav(currentIndex: 3),
+      );
+    }
+
     return AnimatedBuilder(
       animation: _orderbookState,
       builder: (context, _) {
@@ -778,16 +864,7 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
                     ),
                     if (isMine)
                       GestureDetector(
-                        onTap: () {
-                          state.cancelOrder(order.id, side);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Ordem cancelada'),
-                              duration: Duration(milliseconds: 1800),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
+                        onTap: () => _handleCancelOrder(order.id),
                         child: const Padding(
                           padding: EdgeInsets.only(top: 3),
                           child: Text(
@@ -1071,27 +1148,9 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
-              onPressed: (_submitting || isOverBudget)
+              onPressed: (_submitting || isOverBudget || state.currentStartup.id.isEmpty)
                   ? null
-                  : () async {
-                      setState(() => _submitting = true);
-                      final success = await state.submitOrder();
-                      if (!mounted) return;
-                      setState(() => _submitting = false);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            success
-                                ? (isBuy ? 'Compra enviada com sucesso' : 'Venda enviada com sucesso')
-                                : 'Não foi possível processar a ordem',
-                          ),
-                          duration: const Duration(milliseconds: 2200),
-                          backgroundColor: success ? actionColor : _sellColor,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                      if (success) _clearInputs();
-                    },
+                  : () => _handleSubmitOrder(state, isBuy),
               style: ElevatedButton.styleFrom(
                 backgroundColor: actionColor,
                 foregroundColor: Colors.white,
@@ -1455,6 +1514,97 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
                 ],
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  // ── ORDER ACTIONS ──────────────────────────────────────────────────────────
+
+  Future<void> _handleSubmitOrder(OrderbookState state, bool isBuy) async {
+    final qty = state.inputQty;
+    final price = state.orderType == 'limit' ? state.inputPrice : null;
+    final startupId = state.currentStartup.id;
+
+    if (qty <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe uma quantidade válida.')),
+      );
+      return;
+    }
+    if (state.orderType == 'limit' && (price == null || price <= 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Informe um preço válido para limite.')),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+
+    final result = await _service.createOrder(
+      startupId: startupId,
+      side: isBuy ? 'buy' : 'sell',
+      orderType: state.orderType,
+      qty: qty,
+      price: price,
+    );
+
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    if (result.success) {
+      _clearInputs();
+      final msg = result.tradesExecuted > 0
+          ? '${isBuy ? 'Compra' : 'Venda'} executada — ${result.tradesExecuted} trade(s)!'
+          : (isBuy ? 'Ordem de compra enviada' : 'Ordem de venda enviada');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: isBuy ? _buyColor : _sellColor,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 2500),
+        ),
+      );
+    } else {
+      _showErrorDialog(result.errorMessage ?? 'Erro ao processar ordem.');
+    }
+  }
+
+  Future<void> _handleCancelOrder(String orderId) async {
+    final startupId = _orderbookState.currentStartup.id;
+    final result = await _service.cancelOrder(
+      startupId: startupId,
+      orderId: orderId,
+    );
+    if (!mounted) return;
+    if (result.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Ordem cancelada'),
+          duration: Duration(milliseconds: 1800),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      _showErrorDialog(result.errorMessage ?? 'Não foi possível cancelar a ordem.');
+    }
+  }
+
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text(
+          'Atenção',
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _ink),
+        ),
+        content: Text(message, style: const TextStyle(fontSize: 13, color: _muted, height: 1.55)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w700, color: _accent)),
+          ),
         ],
       ),
     );

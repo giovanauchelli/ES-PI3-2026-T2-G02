@@ -1,10 +1,13 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../models/user_profile.dart';
+import '../../models/orderbook_models.dart';
 import '../../models/wallet_holding.dart';
 import '../../models/wallet_transaction.dart';
 import '../../services/auth_service.dart';
+import '../../services/balcao_service.dart';
 import '../balcao/balcao_screen.dart';
 import '../home/home_screen.dart';
 import 'deposit_screen.dart';
@@ -18,7 +21,8 @@ class WalletScreen extends StatefulWidget {
 
 class _WalletScreenState extends State<WalletScreen> {
   final AuthService _authService = AuthService();
-  Stream<UserProfile?>? _perfilStream;
+  late final Stream<Wallet> _walletStream;
+  late final Stream<List<WalletHolding>> _holdingsStream;
   Future<List<WalletTransaction>>? _transacoesFuture;
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
@@ -29,8 +33,79 @@ class _WalletScreenState extends State<WalletScreen> {
   @override
   void initState() {
     super.initState();
-    _perfilStream = _authService.streamCurrentUserProfile();
+    _walletStream = BalcaoService().watchWallet();
+    _holdingsStream = _buildHoldingsStream();
     _carregarHistorico();
+  }
+
+  Stream<List<WalletHolding>> _buildHoldingsStream() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return Stream.value(const []);
+
+    final db = FirebaseFirestore.instance;
+    // Stream the legacy doc so purchases via comprarTokensStartup update reactively.
+    return db.collection('usuarios').doc(uid).snapshots().asyncMap((legacySnap) async {
+      final Map<String, WalletHolding> map = {};
+
+      // Legacy: usuarios/{uid}.portfolio (written by comprarTokensStartup CF)
+      final portfolio = legacySnap.data()?['portfolio'] as Map<String, dynamic>? ?? {};
+      for (final entry in portfolio.entries) {
+        final startupId = entry.key;
+        final portData = entry.value as Map<String, dynamic>? ?? {};
+        final quantidade = (portData['quantidade'] as num?)?.toInt() ?? 0;
+        if (quantidade <= 0) continue;
+        final startupSnap = await db.collection('startups').doc(startupId).get();
+        final sd = startupSnap.data() ?? {};
+        final preco = _resolvePreco(sd);
+        map[startupId] = WalletHolding(
+          startupUid: startupId,
+          startupNome: (sd['nome'] as String?) ?? startupId,
+          startupSetor: (sd['setor'] as String?) ?? '',
+          quantidade: quantidade,
+          precoMedio: preco,
+          valorInvestido: quantidade * preco,
+        );
+      }
+
+      // New: users/{uid}/positions (written by ordersCreate CF) — takes priority
+      try {
+        final posSnap = await db.collection('users').doc(uid).collection('positions').get();
+        for (final posDoc in posSnap.docs) {
+          final posData = posDoc.data();
+          final tokensLivres = (posData['tokens_livres'] as num?)?.toInt() ?? 0;
+          if (tokensLivres <= 0) {
+            map.remove(posDoc.id);
+            continue;
+          }
+          final startupSnap = await db.collection('startups').doc(posDoc.id).get();
+          final sd = startupSnap.data() ?? {};
+          final preco = _resolvePreco(sd);
+          map[posDoc.id] = WalletHolding(
+            startupUid: posDoc.id,
+            startupNome: (sd['nome'] as String?) ?? posDoc.id,
+            startupSetor: (sd['setor'] as String?) ?? '',
+            quantidade: tokensLivres,
+            precoMedio: preco,
+            valorInvestido: tokensLivres * preco,
+          );
+        }
+      } catch (_) {}
+
+      final holdings = map.values.toList();
+      holdings.sort((a, b) => b.valorInvestido.compareTo(a.valorInvestido));
+      return holdings;
+    });
+  }
+
+  double _resolvePreco(Map<String, dynamic> sd) {
+    final balcao = sd['balcao'] as Map<String, dynamic>? ?? {};
+    final cfg = balcao['config'] as Map<String, dynamic>? ?? {};
+    final st = balcao['state'] as Map<String, dynamic>? ?? {};
+    final lastPrice = (st['last_price'] as num?)?.toDouble() ?? 0;
+    if (lastPrice > 0) return lastPrice;
+    final precoEmissao = (cfg['preco_emissao'] as num?)?.toDouble() ?? 0;
+    if (precoEmissao > 0) return precoEmissao;
+    return ((sd['precoToken'] ?? sd['preco_token'] ?? 0) as num).toDouble();
   }
 
   void _carregarHistorico() {
@@ -39,11 +114,15 @@ class _WalletScreenState extends State<WalletScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<UserProfile?>(
-      stream: _perfilStream,
-      builder: (context, snapshot) {
-        final saldo = snapshot.data?.saldo ?? 0;
-        final holdings = snapshot.data?.holdings ?? const <WalletHolding>[];
+    return StreamBuilder<Wallet>(
+      stream: _walletStream,
+      builder: (context, walletSnapshot) {
+        final saldo = walletSnapshot.data?.brl ?? 0;
+
+        return StreamBuilder<List<WalletHolding>>(
+          stream: _holdingsStream,
+          builder: (context, holdingsSnapshot) {
+            final holdings = holdingsSnapshot.data ?? const <WalletHolding>[];
 
         return Scaffold(
           backgroundColor: const Color.fromARGB(255, 255, 255, 255),
@@ -324,6 +403,8 @@ class _WalletScreenState extends State<WalletScreen> {
         );
       },
     );
+  },
+);
   }
 
   String _formatValorTransacao(double valor, bool positivo) {

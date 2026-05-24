@@ -12,6 +12,7 @@ import {
   type MfaChannel,
 } from "./mfa_code";
 export * from "./mfa_code";
+export * from "./balcao";
 
 // Inicializa o SDK do Firebase Admin (requisito para acesso ao Auth/Firestore).
 admin.initializeApp();
@@ -464,11 +465,27 @@ export const comprarTokensStartup = functions
     }
 
     const startupData = startupSnapshot.data() as Record<string, unknown>;
-    const precoToken = pickPrecoFromData(
-      startupData,
-      toNumber(startupData.cptAportado ?? startupData.capitalAportado ?? startupData.cpt) ?? 0,
-      toNumber(startupData.totalTokensEmitidos ?? startupData.totalTokens ?? startupData.tokensEmitidos) ?? 0
-    );
+
+    // Preço canônico vive na subcoleção balcao/state|config; cai para o mapa embutido / raiz.
+    const [cfgSnap, stSnap] = await Promise.all([
+      startupRef.collection("balcao").doc("config").get(),
+      startupRef.collection("balcao").doc("state").get(),
+    ]);
+    const embBalcao = (typeof startupData.balcao === 'object' && startupData.balcao !== null
+      ? startupData.balcao as Record<string, unknown>
+      : {}) as Record<string, unknown>;
+    const balcaoCfg = (cfgSnap.exists ? cfgSnap.data() : (embBalcao.config ?? {})) as Record<string, unknown>;
+    const balcaoSt = (stSnap.exists ? stSnap.data() : (embBalcao.state ?? {})) as Record<string, unknown>;
+
+    let precoToken = toNumber(balcaoSt.last_price) ?? 0;
+    if (!Number.isFinite(precoToken) || precoToken <= 0) precoToken = toNumber(balcaoCfg.preco_emissao) ?? 0;
+    if (!Number.isFinite(precoToken) || precoToken <= 0) {
+      precoToken = pickPrecoFromData(
+        startupData,
+        toNumber(startupData.cptAportado ?? startupData.capitalAportado ?? startupData.cpt ?? balcaoSt.cptAportado) ?? 0,
+        toNumber(startupData.totalTokensEmitidos ?? startupData.totalTokens ?? startupData.tokensEmitidos ?? balcaoCfg.tokens_emitidos) ?? 0
+      );
+    }
 
     if (!Number.isFinite(precoToken) || precoToken <= 0) {
       throw new functions.https.HttpsError(
@@ -560,6 +577,7 @@ export const comprarTokensStartup = functions
 
 // Tipo usado para retornar itens do catálogo de startups (nomes, descrição, valores formatados etc.).
 type StartupCatalogItem = {
+  uid: string;
   nome: string;
   descricao: string;
   status: string;
@@ -715,24 +733,51 @@ export const listarStartups = functions
 
     const docs = snapshot?.docs ?? [];
 
-    const startups: StartupCatalogItem[] = docs.map((doc) => {
+    const startups: StartupCatalogItem[] = await Promise.all(docs.map(async (doc) => {
       const data = doc.data() as Record<string, unknown>;
 
       const nome = typeof data.nome === "string" ? data.nome : "";
-      const descricao = typeof data.descricao === "string" ? data.descricao : "";
+      const descricao = typeof data.descricao === "string"
+        ? data.descricao
+        : typeof data.bio === "string" ? data.bio : "";
 
-      const estagio = data.estagioDesenvolvimento ?? data.estagio ?? data.stage;
+      const estagio = data.estagioDesenvolvimento ?? data.estagio ?? data.stage ?? data.status;
       const status = stageLabel(estagio);
 
-      const totalTokensRaw = data.totalTokensEmitidos ?? data.totalTokens ?? data.tokensEmitidos;
-      const cptAportadoRaw = data.cptAportado ?? data.capitalAportado ?? data.cpt;
+      // Mapa embutido balcao.config/state (compat) — usado como fallback
+      const balcao = (typeof data.balcao === 'object' && data.balcao !== null)
+        ? data.balcao as Record<string, unknown>
+        : {};
+      const embCfg = (typeof balcao.config === 'object' && balcao.config !== null)
+        ? balcao.config as Record<string, unknown>
+        : {};
+      const embSt = (typeof balcao.state === 'object' && balcao.state !== null)
+        ? balcao.state as Record<string, unknown>
+        : {};
 
-      const totalTokens = toNumber(totalTokensRaw) ?? 0;
-      const cptAportado = toNumber(cptAportadoRaw) ?? 0;
+      // Subcoleção balcao/config|state (canônica) — prevalece sobre o embutido/raiz
+      const [cfgSnap, stSnap] = await Promise.all([
+        doc.ref.collection("balcao").doc("config").get(),
+        doc.ref.collection("balcao").doc("state").get(),
+      ]);
+      const balcaoCfg = (cfgSnap.exists ? cfgSnap.data() : embCfg) as Record<string, unknown>;
+      const balcaoSt = (stSnap.exists ? stSnap.data() : embSt) as Record<string, unknown>;
 
-      const preco = pickPrecoFromData(data, cptAportado, totalTokens);
+      const totalTokens =
+        toNumber(balcaoCfg.tokens_emitidos) ??
+        toNumber(data.totalTokensEmitidos ?? data.totalTokens ?? data.tokensEmitidos) ??
+        0;
+      const cptAportado =
+        toNumber(balcaoSt.cptAportado ?? balcaoSt.capitalAportado) ??
+        toNumber(data.cptAportado ?? data.capitalAportado ?? data.cpt) ??
+        0;
+
+      let preco = toNumber(balcaoSt.last_price) ?? 0;
+      if (!Number.isFinite(preco) || preco <= 0) preco = toNumber(balcaoCfg.preco_emissao) ?? 0;
+      if (!Number.isFinite(preco) || preco <= 0) preco = pickPrecoFromData(data, cptAportado, totalTokens);
 
       return {
+        uid: doc.id,
         nome,
         descricao,
         status,
@@ -740,7 +785,7 @@ export const listarStartups = functions
         capital: formatCapital(cptAportado),
         preco: formatPrecoBRL(preco),
       };
-    });
+    }));
 
     return { startups };
   }

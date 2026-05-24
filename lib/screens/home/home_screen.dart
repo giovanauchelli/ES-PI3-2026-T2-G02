@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/orderbook_models.dart';
 import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
+import '../../services/balcao_service.dart';
 import '../balcao/balcao_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../profile/profile_screen.dart';
@@ -139,8 +141,7 @@ class _SaldoCard extends StatefulWidget {
 }
 
 class _SaldoCardState extends State<_SaldoCard> {
-  final AuthService _authService = AuthService();
-  Future<UserProfile?>? _perfilFuture;
+  late final Stream<Wallet> _walletStream;
   final NumberFormat _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
     symbol: 'R\$ ',
@@ -150,15 +151,15 @@ class _SaldoCardState extends State<_SaldoCard> {
   @override
   void initState() {
     super.initState();
-    _perfilFuture = _authService.getCurrentUserProfile();
+    _walletStream = BalcaoService().watchWallet();
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<UserProfile?>(
-      future: _perfilFuture,
+    return StreamBuilder<Wallet>(
+      stream: _walletStream,
       builder: (context, snapshot) {
-        final saldo = snapshot.data?.saldo ?? 0;
+        final saldo = snapshot.data?.brl ?? 0;
 
         return Container(
           width: double.infinity,

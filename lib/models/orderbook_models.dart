@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class Order {
-  final int id;
+  final String id;
   final String side; // 'buy' ou 'sell'
   final String type; // 'market' ou 'limit'
   double price;
@@ -55,6 +55,7 @@ class Wallet {
 class Startup {
   final String id;
   final String nome;
+  final String sigla;
   final double precoEmissao;
   double? lastPrice;
   final int tokensEmitidos;
@@ -62,6 +63,7 @@ class Startup {
   Startup({
     required this.id,
     required this.nome,
+    required this.sigla,
     required this.precoEmissao,
     this.lastPrice,
     required this.tokensEmitidos,
@@ -89,55 +91,86 @@ class OrderbookState extends ChangeNotifier {
   List<Order> sellBook = [];
   List<Trade> trades = [];
 
-  Set<int> myOrderIds = {};
-  int _nextId = 1000;
+  Set<String> myOrderIds = {};
+
+  // Tracks startup tokens sold (from remote state)
+  int remoteTokensVendidos = 0;
 
   String currentTab = 'buy';
   String orderType = 'market';
   double inputPrice = 0;
   int inputQty = 0;
 
-  OrderbookState({required this.wallet, required this.currentStartup}) {
-    _initializeBook();
+  OrderbookState({required this.wallet, required this.currentStartup});
+
+  // ── Remote updates ────────────────────────────────────────────────────────
+
+  void updateBuyBook(List<Order> orders) {
+    buyBook = orders;
+    myOrderIds = {
+      ...myOrderIds.where((id) => sellBook.any((o) => o.id == id)),
+      ...orders.where((o) => o.mine).map((o) => o.id),
+    };
+    notifyListeners();
   }
 
-  void _initializeBook() {
-    sellBook = [
-      Order(
-        id: 100,
-        side: 'sell',
-        type: 'limit',
-        price: currentStartup.precoEmissao,
-        qtyOriginal: currentStartup.tokensEmitidos,
-        qty: currentStartup.tokensEmitidos,
-        mine: false,
-        isStartup: true,
-      ),
-    ];
-
-    buyBook = [
-      Order(
-        id: 1,
-        side: 'buy',
-        type: 'limit',
-        price: 2.40,
-        qtyOriginal: 150,
-        qty: 150,
-        mine: false,
-        isStartup: false,
-      ),
-      Order(
-        id: 2,
-        side: 'buy',
-        type: 'limit',
-        price: 2.35,
-        qtyOriginal: 300,
-        qty: 300,
-        mine: false,
-        isStartup: false,
-      ),
-    ];
+  void updateSellBook(List<Order> orders) {
+    sellBook = orders;
+    myOrderIds = {
+      ...myOrderIds.where((id) => buyBook.any((o) => o.id == id)),
+      ...orders.where((o) => o.mine).map((o) => o.id),
+    };
+    notifyListeners();
   }
+
+  void updateBothBooks(List<Order> buys, List<Order> sells) {
+    buyBook = buys;
+    sellBook = sells;
+    myOrderIds = {
+      ...buys.where((o) => o.mine).map((o) => o.id),
+      ...sells.where((o) => o.mine).map((o) => o.id),
+    };
+    notifyListeners();
+  }
+
+  void updateTrades(List<Trade> remoteTrades) {
+    trades = remoteTrades;
+    notifyListeners();
+  }
+
+  void updateWallet(Wallet w) {
+    wallet = w;
+    notifyListeners();
+  }
+
+  void updatePosition(int tokensLivres, int tokensReservados) {
+    wallet = Wallet(
+      brl: wallet.brl,
+      tokens: tokensLivres,
+      tokensReserved: tokensReservados,
+    );
+    notifyListeners();
+  }
+
+  void updateStartupState(double? lastPrice, int tokensVendidos) {
+    currentStartup.lastPrice = lastPrice;
+    remoteTokensVendidos = tokensVendidos;
+    notifyListeners();
+  }
+
+  void changeStartup(Startup startup) {
+    currentStartup = startup;
+    buyBook = [];
+    sellBook = [];
+    trades = [];
+    myOrderIds = {};
+    remoteTokensVendidos = 0;
+    inputPrice = 0;
+    inputQty = 0;
+    notifyListeners();
+  }
+
+  // ── Computed ──────────────────────────────────────────────────────────────
 
   List<Order> get sortedBuyBook {
     final sorted = [...buyBook];
@@ -161,23 +194,14 @@ class OrderbookState extends ChangeNotifier {
     return ask - bid;
   }
 
-  int get startupTokensDisponiveis {
-    final startupOrders = sellBook.where((order) => order.isStartup);
-    return startupOrders.fold(0, (total, order) => total + order.qty);
-  }
-
-  int get startupTokensVendidos {
-    final sold = currentStartup.tokensEmitidos - startupTokensDisponiveis;
-    return sold < 0 ? 0 : sold;
-  }
+  int get startupTokensVendidos => remoteTokensVendidos;
 
   double get startupSaleProgress {
     if (currentStartup.tokensEmitidos == 0) return 0;
-    return startupTokensVendidos / currentStartup.tokensEmitidos;
+    return (startupTokensVendidos / currentStartup.tokensEmitidos).clamp(0.0, 1.0);
   }
 
   int get totalBidVolume => buyBook.fold(0, (total, order) => total + order.qty);
-
   int get totalAskVolume => sellBook.fold(0, (total, order) => total + order.qty);
 
   double? estimateMarketTotal(String side, int qty) {
@@ -191,12 +215,9 @@ class OrderbookState extends ChangeNotifier {
       final take = remaining < order.qty ? remaining : order.qty;
       total += take * order.price;
       remaining -= take;
-      if (remaining <= 0) {
-        return total;
-      }
+      if (remaining <= 0) return total;
     }
-
-    return null;
+    return null; // insufficient volume
   }
 
   double? estimateAverageMarketPrice(String side, int qty) {
@@ -213,218 +234,6 @@ class OrderbookState extends ChangeNotifier {
   void setOrderType(String type) {
     orderType = type;
     notifyListeners();
-  }
-
-  Future<bool> submitOrder() async {
-    if (inputQty <= 0 || inputQty > 1000000) {
-      return false;
-    }
-
-    try {
-      if (orderType == 'market') {
-        return await _executeMarketOrder();
-      }
-      return _createLimitOrder();
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> _executeMarketOrder() async {
-    if (currentTab == 'buy') {
-      final sellSorted = sortedSellBook;
-      if (sellSorted.isEmpty) return false;
-
-      var remaining = inputQty;
-      var totalCost = 0.0;
-      for (final sellOrder in sellSorted) {
-        final take = remaining < sellOrder.qty ? remaining : sellOrder.qty;
-        totalCost += take * sellOrder.price;
-        remaining -= take;
-        if (remaining <= 0) break;
-      }
-
-      if (remaining > 0) return false;
-      if (totalCost > wallet.brl) return false;
-
-      remaining = inputQty;
-      for (final sellOrder in sellSorted) {
-        final take = remaining < sellOrder.qty ? remaining : sellOrder.qty;
-        currentStartup.lastPrice = sellOrder.price;
-        trades.add(
-          Trade(
-            time: _getCurrentTime(),
-            side: 'compra',
-            price: sellOrder.price,
-            qty: take,
-          ),
-        );
-        wallet.brl -= take * sellOrder.price;
-        wallet.tokens += take;
-        sellOrder.qty -= take;
-        remaining -= take;
-
-        if (sellOrder.qty <= 0) {
-          sellBook.removeWhere((order) => order.id == sellOrder.id);
-          myOrderIds.remove(sellOrder.id);
-        }
-        if (remaining <= 0) break;
-      }
-
-      inputQty = 0;
-      notifyListeners();
-      return true;
-    }
-
-    if (wallet.tokens < inputQty) return false;
-
-    final buySorted = sortedBuyBook;
-    if (buySorted.isEmpty) return false;
-
-    var remaining = inputQty;
-    for (final buyOrder in buySorted) {
-      final take = remaining < buyOrder.qty ? remaining : buyOrder.qty;
-      currentStartup.lastPrice = buyOrder.price;
-      trades.add(
-        Trade(
-          time: _getCurrentTime(),
-          side: 'venda',
-          price: buyOrder.price,
-          qty: take,
-        ),
-      );
-      wallet.brl += take * buyOrder.price;
-      wallet.tokens -= take;
-      buyOrder.qty -= take;
-      remaining -= take;
-
-      if (buyOrder.qty <= 0) {
-        buyBook.removeWhere((order) => order.id == buyOrder.id);
-        myOrderIds.remove(buyOrder.id);
-      }
-      if (remaining <= 0) break;
-    }
-
-    inputQty = 0;
-    notifyListeners();
-    return true;
-  }
-
-  bool _createLimitOrder() {
-    if (inputPrice <= 0) return false;
-
-    final id = _nextId++;
-    if (currentTab == 'buy') {
-      final cost = inputPrice * inputQty;
-      if (cost > wallet.brl) return false;
-      wallet.brl -= cost;
-      buyBook.add(
-        Order(
-          id: id,
-          side: 'buy',
-          type: 'limit',
-          price: inputPrice,
-          qtyOriginal: inputQty,
-          qty: inputQty,
-          mine: true,
-          isStartup: false,
-        ),
-      );
-      myOrderIds.add(id);
-    } else {
-      if (wallet.tokens < inputQty) return false;
-      wallet.tokens -= inputQty;
-      wallet.tokensReserved += inputQty;
-      sellBook.add(
-        Order(
-          id: id,
-          side: 'sell',
-          type: 'limit',
-          price: inputPrice,
-          qtyOriginal: inputQty,
-          qty: inputQty,
-          mine: true,
-          isStartup: false,
-        ),
-      );
-      myOrderIds.add(id);
-    }
-
-    inputQty = 0;
-    inputPrice = 0;
-    _executeMatch();
-    notifyListeners();
-    return true;
-  }
-
-  void _executeMatch() {
-    while (true) {
-      final buySorted = sortedBuyBook;
-      final sellSorted = sortedSellBook;
-
-      if (buySorted.isEmpty || sellSorted.isEmpty) break;
-
-      final buyOrder = buySorted.first;
-      final sellOrder = sellSorted.first;
-
-      if (buyOrder.price < sellOrder.price) break;
-
-      final qty = buyOrder.qty < sellOrder.qty ? buyOrder.qty : sellOrder.qty;
-      currentStartup.lastPrice = sellOrder.price;
-
-      trades.add(
-        Trade(
-          time: _getCurrentTime(),
-          side: 'compra',
-          price: sellOrder.price,
-          qty: qty,
-        ),
-      );
-
-      if (myOrderIds.contains(buyOrder.id)) {
-        wallet.tokens += qty;
-      }
-      if (myOrderIds.contains(sellOrder.id)) {
-        wallet.tokens -= qty;
-        wallet.tokensReserved -= qty;
-        wallet.brl += sellOrder.price * qty;
-      }
-
-      buyOrder.qty -= qty;
-      sellOrder.qty -= qty;
-
-      if (buyOrder.qty <= 0) {
-        buyBook.removeWhere((order) => order.id == buyOrder.id);
-        myOrderIds.remove(buyOrder.id);
-      }
-      if (sellOrder.qty <= 0) {
-        sellBook.removeWhere((order) => order.id == sellOrder.id);
-        myOrderIds.remove(sellOrder.id);
-      }
-    }
-  }
-
-  void cancelOrder(int id, String side) {
-    final book = side == 'buy' ? buyBook : sellBook;
-    final idx = book.indexWhere((order) => order.id == id);
-    if (idx == -1) return;
-
-    final order = book[idx];
-    if (side == 'buy') {
-      wallet.brl += order.price * order.qty;
-    } else {
-      wallet.tokens += order.qty;
-      wallet.tokensReserved -= order.qty;
-    }
-
-    book.removeAt(idx);
-    myOrderIds.remove(id);
-    notifyListeners();
-  }
-
-  String _getCurrentTime() {
-    final now = DateTime.now();
-    return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
   }
 
   String formatPrice(double price) {

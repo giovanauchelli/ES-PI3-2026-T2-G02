@@ -8,9 +8,10 @@ class Socio {
   Socio({required this.nome, required this.percentual});
 
   factory Socio.fromMap(Map<String, dynamic> map) {
+    String s(dynamic v) => v is String ? v : '';
     return Socio(
-      nome: (map['Nome'] ?? map['nome'] ?? '') as String,
-      percentual: (map['Percentual'] ?? map['percentual'] ?? '') as String,
+      nome: s(map['Nome'] ?? map['nome']),
+      percentual: s(map['Percentual'] ?? map['percentual']),
     );
   }
 }
@@ -21,15 +22,17 @@ class Membro {
   Membro({required this.nome, required this.cargo});
 
   factory Membro.fromMap(Map<String, dynamic> map) {
+    String s(dynamic v) => v is String ? v : '';
     return Membro(
-      nome: (map['Nome'] ?? map['nome'] ?? '') as String,
-      cargo: (map['Cargo'] ?? map['cargo'] ?? '') as String,
+      nome: s(map['Nome'] ?? map['nome']),
+      cargo: s(map['Cargo'] ?? map['cargo']),
     );
   }
 }
 
 class Startup extends Empresa {
   String? _uid;
+  String? _sigla;
   String? _descricao;
   String? _estSocietaria;
   String? _setor;
@@ -49,6 +52,7 @@ class Startup extends Empresa {
 
   Startup({
     String? uid,
+    String? sigla,
     super.cnpj,
     super.nome,
     super.dataCriacao,
@@ -69,6 +73,7 @@ class Startup extends Empresa {
     List<Membro>? membros,
     List<Membro>? mentores,
   })  : _uid = uid,
+        _sigla = sigla,
         _descricao = descricao,
         _estSocietaria = estSocietaria,
         _setor = setor,
@@ -89,6 +94,7 @@ class Startup extends Empresa {
 
   // ── Getters ───────────────────────────────────────────────────
   String? get uid => _uid;
+  String get sigla => _sigla ?? _fallbackSigla();
   String? get descricao => _descricao;
   String? get estSocietaria => _estSocietaria;
   String? get setor => _setor;
@@ -106,8 +112,14 @@ class Startup extends Empresa {
   List<Membro> get membros => _membros;
   List<Membro> get mentores => _mentores;
 
+  String _fallbackSigla() {
+    final clean = (nome ?? '').replaceAll(' ', '');
+    return clean.substring(0, clean.length.clamp(0, 4)).toUpperCase();
+  }
+
   // ── Setters ───────────────────────────────────────────────────
   set uid(String? value) => _uid = value;
+  set sigla(String? value) => _sigla = value;
   set descricao(String? value) => _descricao = value;
   set estSocietaria(String? value) => _estSocietaria = value;
   set setor(String? value) => _setor = value;
@@ -128,11 +140,18 @@ class Startup extends Empresa {
 
   // ── fromFirestore ─────────────────────────────────────────────
   factory Startup.fromFirestore(String uid, Map<String, dynamic> data) {
+    String? str(dynamic v) => v is String ? v : null;
+    num toNum(dynamic v) => v is num ? v : 0;
+
     List<Socio> parseSocios(dynamic raw) {
       if (raw is! List) return [];
       return raw
           .whereType<Map>()
-          .map((e) => Socio.fromMap(Map<String, dynamic>.from(e)))
+          .map((e) {
+            try { return Socio.fromMap(Map<String, dynamic>.from(e)); }
+            catch (_) { return null; }
+          })
+          .whereType<Socio>()
           .toList();
     }
 
@@ -140,34 +159,47 @@ class Startup extends Empresa {
       if (raw is! List) return [];
       return raw
           .whereType<Map>()
-          .map((e) => Membro.fromMap(Map<String, dynamic>.from(e)))
+          .map((e) {
+            try { return Membro.fromMap(Map<String, dynamic>.from(e)); }
+            catch (_) { return null; }
+          })
+          .whereType<Membro>()
           .toList();
     }
 
+    DateTime? createdAt;
+    try {
+      final ts = data['createdAt'];
+      if (ts is Timestamp) createdAt = ts.toDate();
+    } catch (_) {}
+
     return Startup(
       uid: uid,
-      nome: data['nome'] as String?,
-      descricao: data['descricao'] as String? ?? data['bio'] as String?,
-      setor: data['setor'] as String?,
-      status: data['status'] as String?,
-      precoToken: (data['precoToken'] ?? data['preco_token'] ?? 0).toDouble(),
+      sigla: str(data['sigla']),
+      nome: str(data['nome']),
+      descricao: str(data['descricao']) ?? str(data['bio']),
+      setor: str(data['setor']),
+      status: str(data['status']),
+      precoToken: toNum(data['precoToken'] ?? data['preco_token']).toDouble(),
       totalTokensEmitidos:
-          (data['tokensEmitidos'] ?? data['totalTokensEmitidos'] ?? 0) as int,
-      nmrInvestidores: (data['nmrInvestidores'] ?? 0) as int,
-      cptAportado:
-          (data['cptAportado'] ?? data['capitalAportado'] ?? 0).toDouble(),
-      capitalMeta: (data['capitalMeta'] ?? 0).toDouble(),
+          toNum(data['tokensEmitidos'] ?? data['totalTokensEmitidos']).toInt(),
+      nmrInvestidores: toNum(data['nmrInvestidores']).toInt(),
+      cptAportado: toNum(data['cptAportado'] ?? data['capitalAportado']).toDouble(),
+      capitalMeta: toNum(data['capitalMeta']).toDouble(),
       estagioDesenvolvimento:
-          _parseEstagio(data['estagioDesenvolvimento'] as String?),
-      dataCriacao: (data['createdAt'] as Timestamp?)?.toDate(),
+          _parseEstagio(str(data['estagioDesenvolvimento'])),
+      dataCriacao: createdAt,
       socios: parseSocios(data['Socios'] ?? data['socios']),
       membros: parseMembros(data['Membros'] ?? data['membros']),
       mentores: parseMembros(data['Mentores'] ?? data['mentores']),
-      linksVideos: List<String>.from(
-          data['linksVideos'] ?? data['LinksVideos'] ?? []),
-      membrosConselho: List<String>.from(
-          data['membrosConselho'] ?? data['MembrosConselho'] ?? []),
+      linksVideos: _parseStringList(data['linksVideos'] ?? data['LinksVideos']),
+      membrosConselho: _parseStringList(data['membrosConselho'] ?? data['MembrosConselho']),
     );
+  }
+
+  static List<String> _parseStringList(dynamic raw) {
+    if (raw is! List) return [];
+    return raw.whereType<String>().toList();
   }
 
   static EstagioDesenvolvimento _parseEstagio(String? valor) {
