@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +14,10 @@ final RegExp _senhaUppercaseRegex = RegExp(r'[A-Z]');
 final RegExp _senhaLowercaseRegex = RegExp(r'[a-z]');
 final RegExp _senhaNumberRegex = RegExp(r'[0-9]');
 final RegExp _senhaSpecialRegex = RegExp(r'[^A-Za-z0-9]');
+const String _caracteresMaiusculos = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const String _caracteresMinusculos = 'abcdefghijklmnopqrstuvwxyz';
+const String _caracteresNumericos = '0123456789';
+const String _caracteresEspeciais = '!@#\$%^&*()-_=+[]{};:,.?';
 
 class CadastroScreen extends StatefulWidget {
   const CadastroScreen({super.key});
@@ -21,6 +27,7 @@ class CadastroScreen extends StatefulWidget {
 }
 
 class _CadastroScreenState extends State<CadastroScreen> {
+  final Random _random = Random.secure();
   final _nomeController = TextEditingController();
   final _emailController = TextEditingController();
   final _cpfController = TextEditingController();
@@ -201,38 +208,49 @@ class _CadastroScreenState extends State<CadastroScreen> {
     _confirmarSenhaController.clear();
   }
 
+  void _limparSenhas() {
+    _senhaController.clear();
+    _confirmarSenhaController.clear();
+    _mostrarMensagem('Campos de senha limpos.');
+  }
+
+  void _gerarSenhaAleatoria() {
+    final comprimento =
+        _senhaMinLength + 7 + _random.nextInt(_senhaMaxLength - 14);
+    final caracteresObrigatorios = [
+      _sortearCaractere(_caracteresMaiusculos),
+      _sortearCaractere(_caracteresMinusculos),
+      _sortearCaractere(_caracteresNumericos),
+      _sortearCaractere(_caracteresEspeciais),
+    ];
+    final todosCaracteres =
+        '$_caracteresMaiusculos$_caracteresMinusculos$_caracteresNumericos$_caracteresEspeciais';
+    final senha = <String>[
+      ...caracteresObrigatorios,
+      for (int i = caracteresObrigatorios.length; i < comprimento; i++)
+        _sortearCaractere(todosCaracteres),
+    ]..shuffle(_random);
+
+    final senhaGerada = senha.join();
+    _senhaController.text = senhaGerada;
+    _confirmarSenhaController.text = senhaGerada;
+    _mostrarMensagem('Senha aleatoria gerada e preenchida.');
+  }
+
+  String _sortearCaractere(String caracteres) {
+    return caracteres[_random.nextInt(caracteres.length)];
+  }
+
   void _mostrarMensagem(String mensagem, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(mensagem),
         backgroundColor: isError ? Colors.red[400] : Colors.green[400],
+        duration: const Duration(milliseconds: 800),
       ),
     );
   }
 
-  Future<bool> _showDialogAtivar2FA() async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Ativar 2FA?'),
-        content: const Text(
-          'Quer ativar a verificação em duas etapas agora? Você poderá finalizar no próximo passo.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Agora não'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Ativar'),
-          ),
-        ],
-      ),
-    );
-
-    return result ?? false;
-  }
 
   String _mensagemAuth(FirebaseAuthException error) {
     switch (error.code) {
@@ -622,17 +640,48 @@ class _CadastroScreenState extends State<CadastroScreen> {
                   hint: 'Digite sua senha',
                   enabledBorderColor: _corBordaSenhas,
                   focusedBorderColor: _corBordaSenhas,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureSenha
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: Colors.black38,
-                      size: 20,
+                  suffixIcon: SizedBox(
+                    width: 120,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Limpar senhas',
+                          icon: const Icon(
+                            Icons.cleaning_services_outlined,
+                            color: Colors.black38,
+                            size: 20,
+                          ),
+                          onPressed: _isLoading ? null : _limparSenhas,
+                        ),
+                        IconButton(
+                          tooltip: 'Gerar senha segura',
+                          icon: const Icon(
+                            Icons.password_outlined,
+                            color: Colors.black38,
+                            size: 20,
+                          ),
+                          onPressed: _isLoading ? null : _gerarSenhaAleatoria,
+                        ),
+                        IconButton(
+                          tooltip: _obscureSenha
+                              ? 'Mostrar senha'
+                              : 'Ocultar senha',
+                          icon: Icon(
+                            _obscureSenha
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: Colors.black38,
+                            size: 20,
+                          ),
+                          onPressed: _isLoading
+                              ? null
+                              : () => setState(
+                                  () => _obscureSenha = !_obscureSenha,
+                                ),
+                        ),
+                      ],
                     ),
-                    onPressed: _isLoading
-                        ? null
-                        : () => setState(() => _obscureSenha = !_obscureSenha),
                   ),
                 ),
               ),

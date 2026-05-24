@@ -3,6 +3,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+//import 'package:mescla_invest/screens/authentication/password_recovery_screen.dart';
 import 'package:mescla_invest/screens/initial/splash_screen.dart';
 
 import 'firebase_options.dart';

@@ -110,91 +110,231 @@ Cada usuário possui:
 
 ## MODELO DE DADOS FIRESTORE
 
-### Coleção: startups
+> **PRINCÍPIO DE DESIGN:** O documento principal da startup contém APENAS dados institucionais/de apresentação. TUDO que tocar ou interagir com o balcão (configuração de emissão, lock-ups, preços de mercado, ordens, trades, estatísticas) fica em sub-coleções dedicadas dentro de `startups/{startupId}/balcao/...`. Isso mantém o documento principal leve, evita rewrites por preço (limite Firestore de 1 write/sec por doc) e isola a leitura de quem só quer ver o perfil da startup.
 
+### Visão geral das relações no Firestore
+
+O diagrama abaixo mostra a hierarquia de documentos (linhas sólidas = sub-coleção/contenção) e as relações semânticas entre eles (linhas tracejadas = referência por id; linhas grossas = escritas disparadas pelo matching engine).
+
+```mermaid
+graph LR
+    subgraph STARTUP["📁 startups/{startupId}"]
+        SMAIN(["📄 Documento Principal<br/>nome, setor, fundadores<br/>logo, status"])
+        CFG(["📄 balcao/config<br/>tokens_emitidos, preco_emissao<br/>lockup_quantidade_*<br/>lockup_dias_minimo"])
+        STATE(["📄 balcao/state<br/>last_price, best_bid/ask<br/>tokens_vendidos_startup<br/>spread, total_trades"])
+        ORD(["📁 orders/{orderId}<br/>side, price, qty_*<br/>status, seller_type"])
+        TRD(["📁 trades/{tradeId}<br/>buy/sell_order_id<br/>buyer_id, seller_id<br/>price, qty"])
+        STA(["📄 stats/24h<br/>volume, volatilidade<br/>min/max/avg price"])
+
+        SMAIN --- CFG
+        SMAIN --- STATE
+        SMAIN --- ORD
+        SMAIN --- TRD
+        SMAIN --- STA
+    end
+
+    subgraph USER["📁 users/{userId}"]
+        UMAIN(["📄 Usuário (Auth)"])
+        WAL(["📄 wallet/main<br/>saldo_brl<br/>saldo_brl_reservado"])
+        POS(["📁 positions/{startupId}<br/>tokens_livres<br/>tokens_reservados"])
+        TPU(["📁 token_purchases/{startupId}<br/>entries[acquired_at]<br/>controla vesting"])
+        OHI(["📁 order_history/{orderId}<br/>status_changes[]<br/>auditoria"])
+
+        UMAIN --- WAL
+        UMAIN --- POS
+        UMAIN --- TPU
+        UMAIN --- OHI
+    end
+
+    ORD -.->|user_id| UMAIN
+    TRD -.->|buyer_id / seller_id| UMAIN
+    POS -.->|chave = startupId| SMAIN
+    TPU -.->|chave = startupId| SMAIN
+    OHI -.->|startup_id| SMAIN
+
+    CFG -.->|regras de lock-up| ORD
+    STATE -.->|valida lock-up qty| ORD
+    TPU -.->|valida lock-up tempo| ORD
+    WAL -.->|reserva BRL na compra| ORD
+    POS -.->|reserva tokens na venda| ORD
+
+    ORD ==>|matching gera| TRD
+    TRD ==>|atualiza last_price<br/>best_bid/ask, spread| STATE
+    TRD ==>|cria entry com acquired_at| TPU
+    TRD ==>|incrementa volume_24h| STA
+    ORD ==>|registra status| OHI
+```
+
+**Como ler o diagrama:**
+- **`startups/{id}`** mantém só o perfil institucional. Tudo que muda com o balcão fica nas sub-coleções `balcao/`, `orders/`, `trades/` e `stats/`.
+- **`users/{id}`** espelha o lado do investidor: carteira BRL, posições por startup, lotes de compra (para vesting) e histórico de ordens.
+- **Ligações por id** (tracejadas): orders e trades referenciam usuários por `user_id`/`buyer_id`/`seller_id`; positions e token_purchases usam o `startupId` como chave do documento, evitando duplicar metadados.
+- **Escritas do matching engine** (linhas grossas): cada trade executada propaga atualizações para `balcao/state` (preços), `token_purchases` (registra `acquired_at` para o lock-up temporal), `stats/24h` (agregados) e `order_history` (auditoria).
+- **Validações de lock-up** consultam três documentos antes de aceitar uma ordem de venda de investidor: `balcao/config` (regras), `balcao/state` (% vendido pela startup) e `token_purchases` (datas de aquisição).
+
+### Coleção: startups (documento principal — APENAS dados institucionais)
+
+```
+startups/{startupId}:
 {
-id: string,
-nome: string,
-tokens_emitidos: number,
-tokens_vendidos_startup: number,
-preco_emissao: number,
+  id: string,
+  nome: string,
+  descricao: string,
+  setor: string,
+  logo_url: string | null,
+  site_url: string | null,
+  fundadores: string[],
+  created_at: timestamp,
+  updated_at: timestamp,
+  status: "ativa" | "inativa" | "encerrada"
+}
+```
 
-// Lock-up por quantidade (duas modalidades)
-lockup_quantidade_tipo: "percentual" | "absoluto", // padrão: "percentual"
-lockup_quantidade_valor: number, // se "percentual": 0.5 (50%), se "absoluto": 5000 (tokens)
+> NÃO incluir aqui: `tokens_emitidos`, `preco_emissao`, `last_price`, `lockup_*`, nem nenhum dado que mude por causa do book.
 
-// Lock-up por tempo
-lockup_dias_minimo: number, // padrão 30 - lock-up por tempo em dias
+### Sub-coleção: startups/{startupId}/balcao (configuração e estado do balcão)
 
-last_price: number | null,
-created_at: timestamp
+**Doc fixo `config`** — parâmetros definidos no cadastro do balcão (mutáveis só por admin):
+
+```
+startups/{startupId}/balcao/config:
+{
+  tokens_emitidos: number,
+  preco_emissao: number,
+
+  // Lock-up por quantidade (duas modalidades)
+  lockup_quantidade_tipo: "percentual" | "absoluto", // padrão: "percentual"
+  lockup_quantidade_valor: number, // se "percentual": 0.5 (50%), se "absoluto": 5000
+
+  // Lock-up por tempo (vesting)
+  lockup_dias_minimo: number, // padrão: 30
+
+  // Limites de proteção
+  limite_preco_percentual: number | null, // ex: 0.10 (10% acima/abaixo do last_price)
+  qty_maxima_por_ordem: number, // padrão: 100000
+  max_ordens_abertas_por_usuario: number, // padrão: 100
+
+  created_at: timestamp,
+  updated_at: timestamp
+}
+```
+
+**Doc fixo `state`** — estado dinâmico atualizado a cada trade:
+
+```
+startups/{startupId}/balcao/state:
+{
+  last_price: number | null,
+  tokens_vendidos_startup: number,
+  tokens_disponiveis_startup: number,
+  best_bid: number | null,   // desnormalizado para leitura rápida
+  best_ask: number | null,   // desnormalizado para leitura rápida
+  spread: number | null,
+  total_trades: number,
+  updated_at: timestamp
+}
+```
+
+### Sub-coleção: startups/{startupId}/orders (livro de ordens da startup)
+
+```
+startups/{startupId}/orders/{orderId}:
+{
+  id: string,
+  user_id: string,
+  seller_type: "startup" | "investor",
+  side: "buy" | "sell",
+  order_type: "market" | "limit",
+  price: number,
+  qty_original: number,
+  qty_executada: number,
+  qty_restante: number,
+  status: "aberta" | "parcialmente_executada" | "executada" | "cancelada",
+  version: number,             // optimistic locking
+  created_at: timestamp,
+  updated_at: timestamp
+}
+```
+
+> Nada de `startup_id` redundante no doc — a sub-coleção já carrega esse contexto via path.
+
+### Sub-coleção: startups/{startupId}/trades (histórico de trades da startup)
+
+```
+startups/{startupId}/trades/{tradeId}:
+{
+  id: string,
+  buy_order_id: string,
+  sell_order_id: string,
+  buyer_id: string,
+  seller_id: string,
+  seller_type: "startup" | "investor",
+  price: number,
+  qty: number,
+  executed_at: timestamp,
+  spread_at_execution: number,
+  impact_price: number          // para análise de slippage
+}
+```
+
+### Sub-coleção: startups/{startupId}/stats (estatísticas agregadas, opcional)
+
+```
+startups/{startupId}/stats/24h:
+{
+  volume_24h: number,
+  max_price_24h: number,
+  min_price_24h: number,
+  avg_price_24h: number,
+  volatility_24h: number,
+  last_updated: timestamp
+}
+```
+
+### Coleção: users (lado do investidor — também usa sub-coleções)
+
+```
+users/{userId}/wallet/main:
+{
+  saldo_brl: number,
+  saldo_brl_reservado: number,
+  updated_at: timestamp
 }
 
-### Coleção: orders
-
-{
-id: string,
-startup_id: string,
-user_id: string,
-seller_type: "startup" | "investor",
-side: "buy" | "sell",
-order_type: "market" | "limit",
-price: number,
-qty_original: number,
-qty_executada: number,
-qty_restante: number,
-status: "aberta" | "parcialmente_executada" | "executada" | "cancelada",
-created_at: timestamp,
-updated_at: timestamp
-}
-
-### Coleção: trades
-
-{
-id: string,
-startup_id: string,
-buy_order_id: string,
-sell_order_id: string,
-buyer_id: string,
-seller_id: string,
-seller_type: "startup" | "investor",
-price: number,
-qty: number,
-executed_at: timestamp,
-spread_at_execution: number,
-impact_price: number // preço de impacto para análise de slippage
-}
-
-### Coleção: wallets (subcoleção por usuário)
-
-users/{userId}/wallet:
-{
-saldo_brl: number,
-saldo_brl_reservado: number
-}
 users/{userId}/positions/{startupId}:
 {
-startup_id: string,
-tokens_livres: number,
-tokens_reservados: number
+  tokens_livres: number,
+  tokens_reservados: number,
+  updated_at: timestamp
 }
-
-### Coleção: token_purchases (rastreamento de lock-up por tempo)
 
 users/{userId}/token_purchases/{startupId}:
 {
-startup_id: string,
-qty_total: number,
-entries: [
-  {
-    qty: number,
-    acquired_at: timestamp,
-    source: "buy_order" | "transfer" | "airdrop", // origem dos tokens
-    order_id?: string // referência à ordem que gerou a compra
-  }
-],
-updated_at: timestamp
+  qty_total: number,
+  entries: [
+    {
+      qty: number,
+      acquired_at: timestamp,
+      source: "buy_order" | "transfer" | "airdrop",
+      order_id?: string
+    }
+  ],
+  updated_at: timestamp
 }
+
+users/{userId}/order_history/{orderId}:
+{
+  startup_id: string,           // necessário aqui pois não está no path
+  side: "buy" | "sell",
+  order_type: "market" | "limit",
+  price: number,
+  qty_original: number,
+  status_changes: [
+    { status: string, at: timestamp }
+  ],
+  created_at: timestamp
+}
+```
 
 ---
 
@@ -202,29 +342,30 @@ updated_at: timestamp
 
 **POST /orders/create**
 Recebe: { startup_id, user_id, side, order_type, price?, qty }
-- Valida saldo/tokens disponíveis
+- Lê `startups/{startup_id}/balcao/config` e `startups/{startup_id}/balcao/state`
+- Valida saldo (`users/{user_id}/wallet/main`) / tokens disponíveis (`users/{user_id}/positions/{startup_id}`)
 - Valida lock-up se side = "sell" e seller_type = "investor"
-- Insere ordem no Firestore
-- Roda matching engine
+- Insere ordem em `startups/{startup_id}/orders/{orderId}`
+- Roda matching engine dentro da mesma startup
+- Atualiza `balcao/state` (last_price, best_bid, best_ask, spread, tokens_vendidos_startup)
 - Retorna ordem criada + trades executadas
 
 **POST /orders/cancel**
-Recebe: { order_id, user_id }
+Recebe: { startup_id, order_id, user_id }
+- Localiza ordem em `startups/{startup_id}/orders/{order_id}`
 - Valida que a ordem pertence ao usuário
 - Valida que status é "aberta" ou "parcialmente_executada"
-- Cancela ordem e devolve saldo/tokens reservados
+- Cancela ordem e devolve saldo/tokens reservados na wallet/positions
 
 **GET /orderbook/:startupId**
-Retorna:
+Lê de `startups/{startupId}/orders` (filtrado por status aberto/parcial) e `startups/{startupId}/balcao/{config,state}`. Retorna:
 - Lista de ordens abertas lado compra (ordenadas maior→menor preço)
 - Lista de ordens abertas lado venda (ordenadas menor→maior preço)
-- last_price
-- preco_emissao
-- spread (menor ask - maior bid)
+- last_price, preco_emissao, spread, best_bid, best_ask
 - tokens_vendidos_startup / tokens_emitidos (para cálculo do lock-up)
 
 **GET /trades/:startupId**
-Retorna histórico de trades da startup ordenado por executed_at desc
+Lê de `startups/{startupId}/trades` ordenado por executed_at desc (com paginação).
 
 ---
 
@@ -562,25 +703,47 @@ void main() {
 
 ### Índices do Firestore (obrigatórios)
 
+Como `orders` e `trades` agora são sub-coleções de cada startup, as queries por startup específica NÃO precisam de índice composto (o path já filtra). Os índices compostos abaixo só são necessários quando o backend faz **collection group queries** (varrer todas as startups, por ex. dashboard administrativo ou perfil consolidado do usuário).
+
 ```yaml
 # firestore.indexes.json
 {
   "indexes": [
+    // Para listar ordens de UMA startup por side/status: sem índice composto necessário
+    // (já basta status + side dentro da sub-coleção)
     {
       "collectionGroup": "orders",
       "queryScope": "Collection",
       "fields": [
-        {"fieldPath": "startup_id", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"},
         {"fieldPath": "side", "order": "ASCENDING"},
+        {"fieldPath": "price", "order": "ASCENDING"}
+      ]
+    },
+    // Collection group: ordens abertas de um usuário em qualquer startup
+    {
+      "collectionGroup": "orders",
+      "queryScope": "CollectionGroup",
+      "fields": [
+        {"fieldPath": "user_id", "order": "ASCENDING"},
         {"fieldPath": "status", "order": "ASCENDING"},
         {"fieldPath": "created_at", "order": "DESCENDING"}
       ]
     },
+    // Collection group: trades de um usuário em qualquer startup
     {
       "collectionGroup": "trades",
-      "queryScope": "Collection",
+      "queryScope": "CollectionGroup",
       "fields": [
-        {"fieldPath": "startup_id", "order": "ASCENDING"},
+        {"fieldPath": "buyer_id", "order": "ASCENDING"},
+        {"fieldPath": "executed_at", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "trades",
+      "queryScope": "CollectionGroup",
+      "fields": [
+        {"fieldPath": "seller_id", "order": "ASCENDING"},
         {"fieldPath": "executed_at", "order": "DESCENDING"}
       ]
     }
@@ -597,7 +760,7 @@ void main() {
 
 ### Otimizações recomendadas
 
-1. **Denormalização**: manter `best_bid` e `best_ask` desnormalizados na doc da startup para leitura rápida
+1. **Denormalização**: manter `best_bid`, `best_ask`, `last_price` e `spread` desnormalizados em `startups/{id}/balcao/state` para leitura rápida (NÃO no doc principal da startup)
 2. **Caching**: guardar últimas 50 trades em cache local do Flutter
 3. **Paginação**: book mostra apenas top 20 compras + top 20 vendas
 4. **Lazy loading**: histórico de trades carrega sob demanda (20 por vez)
@@ -614,14 +777,26 @@ class OrderbookService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
-  // Listener realtime do orderbook
+  // Listener realtime do orderbook (sub-coleção da startup)
   Stream<OrderBook> watchOrderbook(String startupId) {
     return _firestore
+        .collection('startups')
+        .doc(startupId)
         .collection('orders')
-        .where('startup_id', isEqualTo: startupId)
         .where('status', whereIn: ['aberta', 'parcialmente_executada'])
         .snapshots()
         .map((snap) => _buildOrderbook(snap, startupId));
+  }
+
+  // Listener do estado do balcão (last_price, best_bid, best_ask, spread)
+  Stream<BalcaoState> watchBalcaoState(String startupId) {
+    return _firestore
+        .collection('startups')
+        .doc(startupId)
+        .collection('balcao')
+        .doc('state')
+        .snapshots()
+        .map((snap) => BalcaoState.fromMap(snap.data()!));
   }
 
   // Submeter ordem

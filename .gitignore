@@ -51,9 +51,11 @@ dist/
 package-lock.json
 
 .sixth/
-UML_Classes.txt
 temp/
 lib/credential.json
 functions/.runtimeconfig.json
 /package.json
 test/local_login_test.dart
+/tools
+/docs
+/firestore_control
