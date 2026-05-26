@@ -30,6 +30,7 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
   bool _carregando = true;
   bool _comprando = false;
   int _tokensNaCarteira = 0;
+  bool _eInvestidorAtivo = false;
   String? _erroCarregamento;
 
   @override
@@ -72,8 +73,13 @@ class _StartupDetalheScreenState extends State<StartupDetalheScreen>
           .collection('positions')
           .doc(widget.startupUid)
           .get();
-      final tokens = (snap.data()?['tokens_livres'] as num?)?.toInt() ?? 0;
-      if (mounted) setState(() => _tokensNaCarteira = tokens);
+      final data = snap.data() ?? {};
+      final tokens = (data['tokens_livres'] as num?)?.toInt() ?? 0;
+      final ativo = (data['investidor_ativo'] as bool?) ?? false;
+      if (mounted) setState(() {
+        _tokensNaCarteira = tokens;
+        _eInvestidorAtivo = ativo;
+      });
     } catch (_) {}
   }
 

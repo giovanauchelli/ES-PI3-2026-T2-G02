@@ -415,6 +415,21 @@ async function runMatchingEngine(
   return result;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+async function clearInvestidorAtivoIfEmpty(uid: string, startupId: string): Promise<void> {
+  const posRef = userPositionRef(uid, startupId);
+  const snap = await posRef.get();
+  const pos = (snap.data() ?? {}) as Record<string, number>;
+  const total = (pos.tokens_livres ?? 0) + (pos.tokens_reservados ?? 0);
+  if (total <= 0) {
+    await posRef.set(
+      { investidor_ativo: false, updated_at: admin.firestore.Timestamp.now() },
+      { merge: true }
+    );
+  }
+}
+
 // ─── Cloud Functions ──────────────────────────────────────────────────────────
 
 export const ordersCreate = functions
@@ -590,6 +605,7 @@ export const ordersCreate = functions
 
         t.set(userPositionRef(trade.buyer_id, startupId), {
           tokens_livres: admin.firestore.FieldValue.increment(trade.qty),
+          investidor_ativo: true,
           updated_at: now,
         }, { merge: true });
 
@@ -653,6 +669,15 @@ export const ordersCreate = functions
 
     // Update best_bid / best_ask after transaction (async, non-blocking for response)
     updateBestPrices(startupId).catch(() => undefined);
+
+    // Best-effort: clear investidor_ativo for investor sellers who sold all tokens
+    const investorSellerIds = [...new Set(
+      executedTrades.filter(tr => tr.seller_type === "investor").map(tr => tr.seller_id)
+    )];
+    if (investorSellerIds.length > 0) {
+      Promise.all(investorSellerIds.map(sid => clearInvestidorAtivoIfEmpty(sid, startupId)))
+        .catch(() => undefined);
+    }
 
     return {
       success: true,
