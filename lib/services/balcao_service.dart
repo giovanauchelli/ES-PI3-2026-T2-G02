@@ -226,13 +226,13 @@ class BalcaoService {
         .limit(limit)
         .snapshots()
         .asyncMap((snap) async {
-      final cache = <String, String>{};
+      final cache = <String, ({String nome, String sigla})>{};
       final entries = <OrderHistoryEntry>[];
       for (final doc in snap.docs) {
         final d = doc.data();
         final startupId = (d['startup_id'] as String?) ?? '';
-        String startupNome = cache[startupId] ?? '';
-        String startupSigla = '';
+        String startupNome = cache[startupId]?.nome ?? '';
+        String startupSigla = cache[startupId]?.sigla ?? '';
         if (startupNome.isEmpty && startupId.isNotEmpty) {
           try {
             final s = await _db.collection('startups').doc(startupId).get();
@@ -242,7 +242,7 @@ class BalcaoService {
             startupSigla = (siglaRaw != null && siglaRaw.isNotEmpty)
                 ? siglaRaw
                 : startupNome.replaceAll(' ', '').substring(0, startupNome.replaceAll(' ', '').length.clamp(0, 4)).toUpperCase();
-            cache[startupId] = startupNome;
+            cache[startupId] = (nome: startupNome, sigla: startupSigla);
           } catch (_) {
             startupNome = startupId;
           }
