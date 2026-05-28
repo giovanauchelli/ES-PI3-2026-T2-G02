@@ -10,7 +10,7 @@ import '../home/home_screen.dart';
 import '../../models/orderbook_models.dart' show Wallet;
 import '../../models/startup.dart';
 import '../../services/balcao_service.dart';
-import '../../services/startup_service.dart';
+import '../../services/startup_service.dart' hide Startup;
 
 class StartupDetalheScreen extends StatefulWidget {
   final String startupUid;
