@@ -55,6 +55,7 @@ class Startup extends Empresa {
   double _lockupQuantidadeValor = 0.5;
   int _lockupDiasMinimo = 30;
   DateTime? _dataLancamento;
+  String? _videoUrl;
 
   Startup({
     String? uid,
@@ -84,6 +85,7 @@ class Startup extends Empresa {
     double lockupQuantidadeValor = 0.5,
     int lockupDiasMinimo = 30,
     DateTime? dataLancamento,
+    String? videoUrl,
   })  : _uid = uid,
         _sigla = sigla,
         _descricao = descricao,
@@ -108,7 +110,8 @@ class Startup extends Empresa {
         _lockupQuantidadeTipo = lockupQuantidadeTipo,
         _lockupQuantidadeValor = lockupQuantidadeValor,
         _lockupDiasMinimo = lockupDiasMinimo,
-        _dataLancamento = dataLancamento;
+        _dataLancamento = dataLancamento,
+        _videoUrl = videoUrl;
 
   // ── Getters ───────────────────────────────────────────────────
   String? get uid => _uid;
@@ -135,6 +138,7 @@ class Startup extends Empresa {
   double get lockupQuantidadeValor => _lockupQuantidadeValor;
   int get lockupDiasMinimo => _lockupDiasMinimo;
   DateTime? get dataLancamento => _dataLancamento;
+  String? get videoUrl => _videoUrl;
 
   String _fallbackSigla() {
     final clean = (nome ?? '').replaceAll(' ', '');
@@ -161,6 +165,7 @@ class Startup extends Empresa {
   set socios(List<Socio> value) => _socios = value;
   set membros(List<Membro> value) => _membros = value;
   set mentores(List<Membro> value) => _mentores = value;
+  set videoUrl(String? value) => _videoUrl = value;
 
   // ── fromFirestore ─────────────────────────────────────────────
   factory Startup.fromFirestore(String uid, Map<String, dynamic> data) {
@@ -233,6 +238,7 @@ class Startup extends Empresa {
       lockupDiasMinimo:
           toNum(data['lockupDiasMinimo'] ?? data['lockup_dias_minimo'] ?? 30).toInt(),
       dataLancamento: dataLancamento,
+      videoUrl: str(data['videoUrl'] ?? data['video_url']),
     );
   }
 

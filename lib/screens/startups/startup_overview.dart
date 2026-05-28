@@ -7,14 +7,14 @@ class VisaoGeralTab extends StatelessWidget {
 
   const VisaoGeralTab({super.key, this.startup});
 
-  static const String _youtubeUrl = 'https://www.youtube.com/watch?v=SEU_VIDEO_ID';
-
   static const _ink = Color(0xFF121212);
   static const _muted = Color(0xFF6E6E73);
   static const _accent = Color(0xFF173B7A);
 
   Future<void> _abrirYoutube() async {
-    final uri = Uri.parse(_youtubeUrl);
+    final url = startup?.videoUrl;
+    if (url == null || url.isEmpty) return;
+    final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -35,6 +35,7 @@ class VisaoGeralTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = startup;
+    final temVideo = s?.videoUrl != null && s!.videoUrl!.isNotEmpty;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -91,58 +92,60 @@ class VisaoGeralTab extends StatelessWidget {
           ],
           if (s != null) ..._buildLockupSection(s),
           const SizedBox(height: 24),
-          const Text(
-            'Video Demonstrativo',
-            style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87),
-          ),
-          const SizedBox(height: 10),
-          GestureDetector(
-            onTap: _abrirYoutube,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: SizedBox(
-                height: 180,
-                width: double.infinity,
-                child: Stack(
-                  alignment: Alignment.center,
-                  fit: StackFit.expand,
-                  children: [
-                    Container(color: Colors.black),
-                    Center(
-                      child: Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                          border:
-                              Border.all(color: Colors.white54, width: 1.5),
-                        ),
-                        child: const Icon(
-                          Icons.play_arrow,
-                          color: Colors.white,
-                          size: 32,
+          if (temVideo) ...[
+            const Text(
+              'Video Demonstrativo',
+              style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87),
+            ),
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: _abrirYoutube,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  height: 180,
+                  width: double.infinity,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    fit: StackFit.expand,
+                    children: [
+                      Container(color: Colors.black),
+                      Center(
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                            border:
+                                Border.all(color: Colors.white54, width: 1.5),
+                          ),
+                          child: const Icon(
+                            Icons.play_arrow,
+                            color: Colors.white,
+                            size: 32,
+                          ),
                         ),
                       ),
-                    ),
-                    Positioned(
-                      bottom: 8,
-                      left: 12,
-                      child: Text(
-                        s?.nome != null ? '${s!.nome} - Demo' : 'Demo',
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.white70),
+                      Positioned(
+                        bottom: 8,
+                        left: 12,
+                        child: Text(
+                          s?.nome != null ? '${s!.nome} - Demo' : 'Demo',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white70),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
+            const SizedBox(height: 16),
+          ],
         ],
       ),
     );
