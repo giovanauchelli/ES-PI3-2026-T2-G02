@@ -175,10 +175,23 @@ exports.registrarUsuario = functions
         // updatedAt → sempre atualiza para o momento atual.
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
+<<<<<<< HEAD
     // { merge: true } → não apaga campos que já existem no documento;
     // apenas atualiza/adiciona os campos enviados.
 
     // Retorna sucesso para o app.
+=======
+    // Garante wallet/main desde o signup. Idempotente: não sobrescreve saldo existente.
+    const walletRef = usuariosCollection.doc(userId).collection("wallet").doc("main");
+    const walletSnap = await walletRef.get();
+    if (!walletSnap.exists) {
+        await walletRef.set({
+            saldo_brl: 0,
+            saldo_brl_reservado: 0,
+            updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+>>>>>>> 13c3526395066fca12a58092dd861f89ab8d08c5
     return {
         success: true,
         uid: userId,
