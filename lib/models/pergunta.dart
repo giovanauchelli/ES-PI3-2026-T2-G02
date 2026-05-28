@@ -10,6 +10,7 @@ class Pergunta {
   final String textoPergunta;
   final String textoResposta;
   final DateTime dataEnvio;
+  final bool privada;
 
   Pergunta({
     required this.id,
@@ -21,6 +22,7 @@ class Pergunta {
     required this.textoPergunta,
     this.textoResposta = '',
     required this.dataEnvio,
+    this.privada = false,
   });
 
   factory Pergunta.fromFirestore(String id, Map<String, dynamic> data) {
@@ -34,6 +36,7 @@ class Pergunta {
       textoPergunta: data['textoPergunta'] as String? ?? '',
       textoResposta: data['textoResposta'] as String? ?? '',
       dataEnvio: (data['dataEnvio'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      privada: data['privada'] as bool? ?? false,
     );
   }
 
@@ -47,6 +50,7 @@ class Pergunta {
       'textoPergunta': textoPergunta,
       'textoResposta': textoResposta,
       'dataEnvio': Timestamp.fromDate(dataEnvio),
+      'privada': privada,
     };
   }
 }

@@ -1,17 +1,23 @@
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+import '../../models/pergunta.dart';
+import '../../models/startup.dart';
+import '../../services/auth_service.dart';
+import '../../services/chatPrivado_service.dart';
 import '../home/home_screen.dart';
 
 class ChatPrivadoScreen extends StatefulWidget {
-  const ChatPrivadoScreen({super.key});
+  final Startup startup;
 
-  // Use este método para navegar até o ChatPrivadoScreen
-  // Substitua o Navigator.push(...MaterialPageRoute...) pelo:
-  // ChatPrivadoScreen.push(context)
-  static Future<void> push(BuildContext context) {
+  const ChatPrivadoScreen({super.key, required this.startup});
+
+  static Future<void> push(BuildContext context, Startup startup) {
     return Navigator.push(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const ChatPrivadoScreen(),
+        pageBuilder: (_, __, ___) => ChatPrivadoScreen(startup: startup),
         transitionDuration: const Duration(milliseconds: 300),
         reverseTransitionDuration: const Duration(milliseconds: 300),
         transitionsBuilder: (_, animation, __, child) {
@@ -29,17 +35,98 @@ class ChatPrivadoScreen extends StatefulWidget {
   }
 
   @override
-  State<ChatPrivadoScreen> createState() =>
-      _ChatPrivadoScreenState();
+  State<ChatPrivadoScreen> createState() => _ChatPrivadoScreenState();
 }
 
 class _ChatPrivadoScreenState extends State<ChatPrivadoScreen> {
   final TextEditingController _msgController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  late final ChatPrivadoService _service;
+  late final AuthService _authService;
+
+  bool _enviando = false;
+
+  String get _idInvestidor => FirebaseAuth.instance.currentUser?.uid ?? '';
+  String get _idStartup => widget.startup.uid ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    _service = ChatPrivadoService();
+    _authService = AuthService();
+  }
 
   @override
   void dispose() {
     _msgController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  String _iniciais(String nome) {
+    final partes = nome
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (partes.length >= 2) return '${partes[0][0]}${partes[1][0]}'.toUpperCase();
+    if (partes.length == 1) return partes[0][0].toUpperCase();
+    return '?';
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _enviar() async {
+    final texto = _msgController.text.trim();
+    if (texto.isEmpty || _enviando) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => _enviando = true);
+
+    try {
+      final nomeCompleto =
+          await _authService.getUserFullName(user.uid) ?? 'Usuário';
+
+      final pergunta = Pergunta(
+        id: '',
+        idAutor: user.uid,
+        nomeAutor: nomeCompleto,
+        iniciaisAutor: _iniciais(nomeCompleto),
+        idStartup: _idStartup,
+        nomeStartup: widget.startup.nome ?? '',
+        textoPergunta: texto,
+        dataEnvio: DateTime.now(),
+        privada: true,
+      );
+
+      await _service.enviarPerguntaPrivada(pergunta);
+      _msgController.clear();
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao enviar: $e'),
+            backgroundColor: Colors.red[400],
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
   }
 
   @override
@@ -50,6 +137,7 @@ class _ChatPrivadoScreenState extends State<ChatPrivadoScreen> {
       body: SafeArea(
         child: Column(
           children: [
+
             // HEADER
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
@@ -64,24 +152,53 @@ class _ChatPrivadoScreenState extends State<ChatPrivadoScreen> {
                     ),
                   ),
                   const SizedBox(width: 14),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Chat Privado',
-                          style: TextStyle(
+                          widget.startup.nome ?? 'Chat Privado',
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                             color: Colors.black87,
                           ),
                         ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Converse de forma privada com a startup',
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Canal privado com a startup',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.black45,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F5FF),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.lock_rounded,
+                          size: 12,
+                          color: Color(0xFF05054F),
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Privado',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF05054F),
                           ),
                         ),
                       ],
@@ -95,63 +212,104 @@ class _ChatPrivadoScreenState extends State<ChatPrivadoScreen> {
 
             // MENSAGENS
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                children: [
-                  _BubbleInvestidor(
-                    iniciais: 'PD',
-                    texto: 'Qual é o modelo de receita principal da startup?',
-                  ),
+              child: StreamBuilder<List<Pergunta>>(
+                stream: _service.getPerguntasPrivadasStream(
+                  idStartup: _idStartup,
+                  idInvestidor: _idInvestidor,
+                ),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                  const SizedBox(height: 10),
-
-                  _BubbleStartup(
-                    nomeStartup: 'AgroSense',
-                    texto:
-                        'Nosso modelo é baseado em assinatura mensal por sensor ativo na lavoura.',
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  _BubbleInvestidor(
-                    iniciais: 'PD',
-                    texto: 'Vocês possuem previsão de expansão internacional?',
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  _BubbleStartup(
-                    nomeStartup: 'AgroSense',
-                    texto:
-                        'Sim. Estamos planejando expansão para América Latina.',
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  _BubbleInvestidor(
-                    iniciais: 'PD',
-                    texto: 'Como funciona o suporte técnico para produtores?',
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Padding(
-                      padding: EdgeInsets.only(left: 42),
+                  if (snapshot.hasError) {
+                    return const Center(
                       child: Text(
-                        'Aguardando resposta...',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Color(0xFF9E9E9E),
-                          fontStyle: FontStyle.italic,
+                        'Erro ao carregar mensagens.',
+                        style: TextStyle(fontSize: 14, color: Colors.black45),
+                      ),
+                    );
+                  }
+
+                  final perguntas = snapshot.data ?? [];
+
+                  if (perguntas.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF3F5FF),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              color: Color(0xFF05054F),
+                              size: 26,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          const Text(
+                            'Nenhuma mensagem ainda.',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black54,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Envie sua primeira pergunta privada!',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.black38,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  _scrollToBottom();
+
+                  // Monta lista contínua: bolha do investidor + bolha da
+                  // startup (só se houver resposta). Sem "aguardando".
+                  final widgets = <Widget>[];
+                  for (final p in perguntas) {
+                    widgets.add(
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _BubbleInvestidor(
+                          iniciais: p.iniciaisAutor,
+                          texto: p.textoPergunta,
                         ),
                       ),
-                    ),
-                  ),
+                    );
 
-                  const SizedBox(height: 24),
-                ],
+                    if (p.textoResposta.isNotEmpty) {
+                      widgets.add(
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _BubbleStartup(
+                            nomeStartup: p.nomeStartup,
+                            iniciais: _iniciais(p.nomeStartup),
+                            texto: p.textoResposta,
+                          ),
+                        ),
+                      );
+                    }
+                  }
+
+                  return ListView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    children: widgets,
+                  );
+                },
               ),
             ),
 
@@ -161,16 +319,20 @@ class _ChatPrivadoScreenState extends State<ChatPrivadoScreen> {
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Row(
                 children: [
-                  const _Avatar(iniciais: 'AN'),
-
+                  _Avatar(
+                    iniciais: _iniciais(
+                      FirebaseAuth.instance.currentUser?.displayName ?? 'U',
+                    ),
+                  ),
                   const SizedBox(width: 8),
-
                   Expanded(
                     child: TextField(
                       controller: _msgController,
                       style: const TextStyle(fontSize: 13),
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _enviar(),
                       decoration: InputDecoration(
-                        hintText: 'Enviar Mensagem',
+                        hintText: 'Enviar mensagem',
                         hintStyle: const TextStyle(
                           fontSize: 13,
                           color: Colors.black38,
@@ -201,11 +363,9 @@ class _ChatPrivadoScreenState extends State<ChatPrivadoScreen> {
                       ),
                     ),
                   ),
-
                   const SizedBox(width: 8),
-
                   ElevatedButton(
-                    onPressed: () {},
+                    onPressed: _enviando ? null : _enviar,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color.fromARGB(255, 5, 5, 79),
                       shape: RoundedRectangleBorder(
@@ -217,10 +377,24 @@ class _ChatPrivadoScreenState extends State<ChatPrivadoScreen> {
                       ),
                       elevation: 0,
                     ),
-                    child: const Text(
-                      'Enviar',
-                      style: TextStyle(fontSize: 13, color: Colors.white),
-                    ),
+                    child: _enviando
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
+                            ),
+                          )
+                        : const Text(
+                            'Enviar',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white,
+                            ),
+                          ),
                   ),
                 ],
               ),
@@ -281,19 +455,14 @@ class _BubbleInvestidor extends StatelessWidget {
 // BOLHA DA STARTUP (esquerda)
 class _BubbleStartup extends StatelessWidget {
   final String nomeStartup;
+  final String iniciais;
   final String texto;
 
   const _BubbleStartup({
     required this.nomeStartup,
+    required this.iniciais,
     required this.texto,
   });
-
-  String _iniciais(String nome) {
-    final partes = nome.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
-    if (partes.length >= 2) return '${partes[0][0]}${partes[1][0]}'.toUpperCase();
-    if (partes.length == 1) return partes[0][0].toUpperCase();
-    return '?';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -310,7 +479,7 @@ class _BubbleStartup extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Text(
-            _iniciais(nomeStartup),
+            iniciais,
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -333,8 +502,8 @@ class _BubbleStartup extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
                 decoration: const BoxDecoration(
                   color: Color(0xFFF3F3F3),
                   borderRadius: BorderRadius.only(
