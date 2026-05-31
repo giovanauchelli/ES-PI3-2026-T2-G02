@@ -11,8 +11,9 @@ import '../home/home_screen.dart';
 
 class BalcaoScreen extends StatefulWidget {
   final int abaInicial;
+  final String? startupId;
 
-  const BalcaoScreen({super.key, this.abaInicial = 0});
+  const BalcaoScreen({super.key, this.abaInicial = 0, this.startupId});
 
   @override
   State<BalcaoScreen> createState() => _BalcaoScreenState();
@@ -44,6 +45,10 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
   String _marketQuickMode = 'balance';
   bool _showQuickSlider = false;
   double _quickSliderPct = 50;
+  int _stepIndex = 2; // índice em _stepValues: passo ativo dos botões +/−
+
+  // Magnitudes do stepper de quantidade (substitui as 12 teclas +/−)
+  static const List<int> _stepValues = [1, 10, 100, 1000, 10000, 100000];
 
   List<Startup> _startups = [];
   int _startupSelecionada = 0;
@@ -89,12 +94,20 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
     try {
       final startups = await _service.fetchStartups();
       if (!mounted) return;
+      int initialIndex = 0;
+      if (widget.startupId != null) {
+        final found =
+            startups.indexWhere((s) => s.id == widget.startupId);
+        if (found >= 0) initialIndex = found;
+      }
       setState(() {
         _startups = startups;
+        _startupSelecionada = initialIndex;
         _loadingStartups = false;
       });
       if (startups.isNotEmpty) {
-        _applyStartup(0, initialTab: widget.abaInicial == 1 ? 'sell' : 'buy');
+        _applyStartup(initialIndex,
+            initialTab: widget.abaInicial == 1 ? 'sell' : 'buy');
       }
     } catch (_) {
       if (mounted) setState(() => _loadingStartups = false);
@@ -171,6 +184,7 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
     _marketQuickMode = 'balance';
     _showQuickSlider = false;
     _quickSliderPct = 50;
+    _stepIndex = 2;
   }
 
   void _fillFromBook(double price) {
@@ -1493,168 +1507,30 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
             ),
             const SizedBox(height: 14),
           ],
-          // Quantity field
-          _buildSectionLabel('Quantidade de tokens'),
-          const SizedBox(height: 6),
-          TextField(
-            controller: _qtyController,
-            onChanged: (v) => setState(() {
-              state.inputQty = int.tryParse(v) ?? 0;
-            }),
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: _inputDec(hint: 'Ex: 100'),
-          ),
-          const SizedBox(height: 8),
-          // Quick fill
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          // Quantidade — stepper com campo editável central + seletor de passo
+          Row(
             children: [
-              const Text('Rápido:',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: _muted,
-                      fontWeight: FontWeight.w600)),
-              _buildPercentChip(actionColor, actionSoft, state, isBuy),
-              if (isMarket) ...[
-                _buildQuickModeButton(
-                  'Saldo',
-                  selected: _marketQuickMode == 'balance',
-                  color: actionColor,
-                  onTap: () {
-                    setState(() => _marketQuickMode = 'balance');
-                    _applyQuickFill(_quickSliderPct, state, isBuy);
-                  },
+              _buildSectionLabel('Quantidade de tokens'),
+              const Spacer(),
+              GestureDetector(
+                onTap: () => _showInfoDialog(
+                  context,
+                  'Como ajustar a quantidade',
+                  'Digite direto no campo, ou use − e + para somar/subtrair o passo selecionado.\n\nMantenha − ou + pressionado para repetir rápido. O atalho "Preenchimento rápido" calcula a quantidade por uma porcentagem do seu saldo (ou tokens).',
                 ),
-                _buildQuickModeButton(
-                  'Tokens',
-                  selected: _marketQuickMode == 'tokens',
-                  color: actionColor,
-                  onTap: () {
-                    setState(() => _marketQuickMode = 'tokens');
-                    _applyQuickFill(_quickSliderPct, state, isBuy);
-                  },
-                ),
-              ],
-              ...[25, 50, 75, 100].map(
-                (pct) => Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: _buildQuickFillButton('$pct%', pct, state, isBuy),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: GestureDetector(
-                  onTap: () => _applyMaxFill(state, isBuy),
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: _card,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: _border, width: 1.5),
-                    ),
-                    child: const Text(
-                      'Máx',
-                      style: TextStyle(
-                          fontSize: 11,
-                          color: _ink,
-                          fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
+                child: Icon(Icons.help_outline_rounded,
+                    size: 15, color: _muted.withOpacity(0.7)),
               ),
             ],
           ),
-          if (isMarket) ...[
-            const SizedBox(height: 6),
-            Text(
-              _marketQuickMode == 'balance'
-                  ? (isBuy
-                      ? 'Percentual sobre seu saldo em reais.'
-                      : 'Percentual do saldo em reais convertido pela liquidez do book comprador.')
-                  : (isBuy
-                      ? 'Percentual dos tokens disponíveis no book de venda.'
-                      : 'Percentual dos seus tokens livres para venda.'),
-              style: const TextStyle(fontSize: 10, color: _muted),
-            ),
-          ],
-          const SizedBox(height: 12),
-          // Botões de incremento de tokens
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const Text('Incrementar:',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: _muted,
-                      fontWeight: FontWeight.w600)),
-              for (final increment in [1, 10, 100, 1000, 10000, 100000])
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: GestureDetector(
-                    onTap: () => _incrementQuantity(increment, state, isBuy),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _card,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: _border),
-                      ),
-                      child: Text(
-                        '+$increment',
-                        style: const TextStyle(
-                            fontSize: 10,
-                            color: _ink,
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
           const SizedBox(height: 8),
-          // Botões de decremento de tokens
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const Text('Decrementar:',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: _muted,
-                      fontWeight: FontWeight.w600)),
-              for (final decrement in [1, 10, 100, 1000, 10000, 100000])
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: GestureDetector(
-                    onTap: () => _decrementQuantity(decrement, state, isBuy),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _card,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: _border),
-                      ),
-                      child: Text(
-                        '-$decrement',
-                        style: const TextStyle(
-                            fontSize: 10,
-                            color: _ink,
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          _buildQtyStepper(state, isBuy, actionColor, actionSoft),
+          const SizedBox(height: 10),
+          _buildStepSelector(actionColor),
+          const SizedBox(height: 16),
+          // Preenchimento rápido (% do saldo / portfólio + ajuste fino)
+          _buildQuickFillSection(
+              state, isBuy, isMarket, actionColor, actionSoft),
           const SizedBox(height: 6),
           AnimatedSize(
             duration: const Duration(milliseconds: 240),
@@ -1959,21 +1835,254 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
     );
   }
 
-  Widget _buildQuickFillButton(
-      String label, int pct, OrderbookState state, bool isBuy) {
+  // ── QUANTITY STEPPER ───────────────────────────────────────────────────────
+
+  String _stepLabel(int v) => v >= 1000 ? '${v ~/ 1000}K' : '$v';
+
+  Widget _buildQtyStepper(
+    OrderbookState state,
+    bool isBuy,
+    Color actionColor,
+    Color actionSoft,
+  ) {
+    final step = _stepValues[_stepIndex];
+    final canDec = state.inputQty > 0;
+    const radius = 16.0;
+
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        children: [
+          _HoldRepeatButton(
+            enabled: canDec,
+            onStep: () => _decrementQuantity(step, state, isBuy),
+            splashColor: actionSoft,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(radius),
+              bottomLeft: Radius.circular(radius),
+            ),
+            child: SizedBox(
+              width: 62,
+              height: 58,
+              child: Icon(
+                Icons.remove_rounded,
+                size: 26,
+                color: canDec ? actionColor : const Color(0xFFCFCFCF),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 32, color: _border),
+          Expanded(
+            child: TextField(
+              controller: _qtyController,
+              onChanged: (v) => setState(() {
+                state.inputQty = int.tryParse(v) ?? 0;
+              }),
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: _ink,
+                height: 1.0,
+              ),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: '0',
+                hintStyle: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFCFCFCF),
+                ),
+                contentPadding: EdgeInsets.symmetric(horizontal: 6),
+              ),
+            ),
+          ),
+          Container(width: 1, height: 32, color: _border),
+          _HoldRepeatButton(
+            enabled: true,
+            onStep: () => _incrementQuantity(step, state, isBuy),
+            splashColor: actionSoft,
+            borderRadius: const BorderRadius.only(
+              topRight: Radius.circular(radius),
+              bottomRight: Radius.circular(radius),
+            ),
+            child: SizedBox(
+              width: 62,
+              height: 58,
+              child: Icon(Icons.add_rounded, size: 26, color: actionColor),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepSelector(Color actionColor) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(right: 10, top: 4),
+          child: Text(
+            'Passo',
+            style: TextStyle(
+                fontSize: 11, color: _muted, fontWeight: FontWeight.w700),
+          ),
+        ),
+        Expanded(
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (int i = 0; i < _stepValues.length; i++)
+                _buildStepChip(i, actionColor),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStepChip(int i, Color actionColor) {
+    final selected = _stepIndex == i;
     return GestureDetector(
-      onTap: () => _applyQuickFill(pct.toDouble(), state, isBuy),
+      onTap: () => setState(() => _stepIndex = i),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? actionColor : _card,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? actionColor : _border),
+        ),
+        child: Text(
+          _stepLabel(_stepValues[i]),
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: selected ? Colors.white : _ink,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── QUICK FILL ─────────────────────────────────────────────────────────────
+
+  Widget _buildQuickFillSection(
+    OrderbookState state,
+    bool isBuy,
+    bool isMarket,
+    Color actionColor,
+    Color actionSoft,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text(
+              'Preenchimento rápido',
+              style: TextStyle(
+                  fontSize: 12, color: _muted, fontWeight: FontWeight.w700),
+            ),
+            const Spacer(),
+            _buildPercentChip(actionColor, actionSoft, state, isBuy),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _buildPctRow(const [12.5, 25.0, 37.5, 50.0], state, isBuy),
+        const SizedBox(height: 6),
+        _buildPctRow(const [62.5, 75.0, 87.5, 100.0], state, isBuy),
+        if (isMarket) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(right: 10),
+                child: Text(
+                  'Base',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: _muted,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              _buildQuickModeButton(
+                'Saldo',
+                selected: _marketQuickMode == 'balance',
+                color: actionColor,
+                onTap: () {
+                  setState(() => _marketQuickMode = 'balance');
+                  _applyQuickFill(_quickSliderPct, state, isBuy);
+                },
+              ),
+              const SizedBox(width: 8),
+              _buildQuickModeButton(
+                'Tokens',
+                selected: _marketQuickMode == 'tokens',
+                color: actionColor,
+                onTap: () {
+                  setState(() => _marketQuickMode = 'tokens');
+                  _applyQuickFill(_quickSliderPct, state, isBuy);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _marketQuickMode == 'balance'
+                ? (isBuy
+                    ? 'Percentual sobre seu saldo em reais.'
+                    : 'Percentual do saldo em reais convertido pela liquidez do book comprador.')
+                : (isBuy
+                    ? 'Percentual dos tokens disponíveis no book de venda.'
+                    : 'Percentual dos seus tokens livres para venda.'),
+            style: const TextStyle(fontSize: 10, color: _muted),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPctRow(List<double> pcts, OrderbookState state, bool isBuy) {
+    return Row(
+      children: [
+        for (int i = 0; i < pcts.length; i++) ...[
+          if (i > 0) const SizedBox(width: 6),
+          Expanded(child: _buildQuickPctButton(pcts[i], state, isBuy)),
+        ],
+      ],
+    );
+  }
+
+  String _pctLabel(double p) => p == p.roundToDouble()
+      ? '${p.toInt()}%'
+      : '${p.toStringAsFixed(1).replaceAll('.', ',')}%';
+
+  Widget _buildQuickPctButton(double pct, OrderbookState state, bool isBuy) {
+    return GestureDetector(
+      onTap: () => _applyQuickFill(pct, state, isBuy),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        height: 38,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: _card,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(11),
           border: Border.all(color: _border),
         ),
         child: Text(
-          label,
+          _pctLabel(pct),
           style: const TextStyle(
-              fontSize: 11, color: _ink, fontWeight: FontWeight.w600),
+              fontSize: 12, color: _ink, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -2004,33 +2113,6 @@ class _BalcaoScreenState extends State<BalcaoScreen> {
     _qtyController.text = qty > 0 ? qty.toString() : '';
     setState(() {
       _quickSliderPct = pct;
-      state.inputQty = qty;
-    });
-  }
-
-  void _applyMaxFill(OrderbookState state, bool isBuy) {
-    int qty;
-    final brlDisponivel = state.wallet.brlDisponivel;
-
-    if (isBuy) {
-      // Para compra: usar 100% do saldo disponível
-      if (state.orderType == 'market') {
-        qty = state.estimateMarketQtyForValue(state.currentTab, brlDisponivel);
-      } else {
-        // Limit order: saldo disponível / preço da ordem
-        final price = state.inputPrice > 0
-            ? state.inputPrice
-            : state.currentStartup.precoEmissao;
-        qty = price > 0 ? (brlDisponivel / price).floor() : 0;
-      }
-    } else {
-      // Para venda: usar todos os tokens disponíveis
-      qty = state.wallet.tokens;
-    }
-
-    _qtyController.text = qty > 0 ? qty.toString() : '';
-    setState(() {
-      _quickSliderPct = 100.0;
       state.inputQty = qty;
     });
   }
@@ -2901,6 +2983,105 @@ class _GrowingThumbShape extends SliderComponentShape {
       center.translate(-radius * 0.28, -radius * 0.28),
       radius * 0.32,
       Paint()..color = Colors.white.withOpacity(0.28),
+    );
+  }
+}
+
+/// Botão do stepper que dispara um passo no toque e repete (acelerando)
+/// enquanto mantido pressionado. Seguro dentro de listas roláveis: um arraste
+/// para rolar cancela o gesto sem aplicar passo.
+class _HoldRepeatButton extends StatefulWidget {
+  final VoidCallback onStep;
+  final bool enabled;
+  final Widget child;
+  final BorderRadius borderRadius;
+  final Color splashColor;
+
+  const _HoldRepeatButton({
+    required this.onStep,
+    required this.child,
+    required this.borderRadius,
+    required this.splashColor,
+    this.enabled = true,
+  });
+
+  @override
+  State<_HoldRepeatButton> createState() => _HoldRepeatButtonState();
+}
+
+class _HoldRepeatButtonState extends State<_HoldRepeatButton> {
+  Timer? _holdTimer; // atraso inicial antes de começar a repetir
+  Timer? _repeatTimer; // repetição contínua
+  int _ticks = 0;
+  bool _pressed = false;
+
+  void _onTapDown() {
+    if (!widget.enabled) return;
+    setState(() => _pressed = true);
+    _ticks = 0;
+    _holdTimer?.cancel();
+    _holdTimer = Timer(const Duration(milliseconds: 380), _beginRepeat);
+  }
+
+  void _beginRepeat() {
+    HapticFeedback.selectionClick();
+    _tickRepeat();
+  }
+
+  void _tickRepeat() {
+    if (!widget.enabled) {
+      _cancelTimers();
+      return;
+    }
+    widget.onStep();
+    _ticks++;
+    final interval = (130 - _ticks * 10).clamp(45, 130).toInt();
+    _repeatTimer = Timer(Duration(milliseconds: interval), _tickRepeat);
+  }
+
+  void _cancelTimers() {
+    _holdTimer?.cancel();
+    _holdTimer = null;
+    _repeatTimer?.cancel();
+    _repeatTimer = null;
+  }
+
+  void _release() {
+    _cancelTimers();
+    if (mounted && _pressed) setState(() => _pressed = false);
+  }
+
+  void _onTap() {
+    if (!widget.enabled) return;
+    // Quando já entrou no modo repetição, os passos foram aplicados pelo
+    // hold — evita contar um passo extra no soltar.
+    if (_ticks > 0) return;
+    widget.onStep();
+    HapticFeedback.selectionClick();
+  }
+
+  @override
+  void dispose() {
+    _cancelTimers();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: widget.enabled ? (_) => _onTapDown() : null,
+      onTapUp: (_) => _release(),
+      onTapCancel: _release,
+      onTap: _onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: _pressed ? widget.splashColor : Colors.transparent,
+          borderRadius: widget.borderRadius,
+        ),
+        child: widget.child,
+      ),
     );
   }
 }
