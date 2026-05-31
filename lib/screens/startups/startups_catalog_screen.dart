@@ -1,5 +1,5 @@
 //Giovana Uchelli - 25008818
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_functions/cloud_functions.dart'; //Permite chamar as cloud functions
 import 'package:flutter/material.dart';
 
 import '../../services/startup_service.dart';
