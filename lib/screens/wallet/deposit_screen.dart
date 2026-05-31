@@ -15,7 +15,7 @@ class AdicionarSaldoScreen extends StatefulWidget {
 
   const AdicionarSaldoScreen({
     super.key,
-    this.saldoAtual = 2000.00,
+    this.saldoAtual = 2000.00, //Define um valor padrao
     required this.telaRetorno,
   });
 
@@ -28,6 +28,7 @@ class _AdicionarSaldoScreenState extends State<AdicionarSaldoScreen> {
   final TextEditingController _valorController = TextEditingController();
   double _valorDigitado = 0.0;
   bool _salvando = false;
+
   final _currencyFormat = NumberFormat.currency(
     locale: 'pt_BR',
     symbol: 'R\$ ',
@@ -40,6 +41,7 @@ class _AdicionarSaldoScreenState extends State<AdicionarSaldoScreen> {
     // Inicia o campo já formatado como "R$ 0,00"
     _valorController.value = TextEditingValue(
       text: _CurrencyInputFormatter.formatFromDigits(''),
+
       selection: TextSelection.collapsed(
         offset: _CurrencyInputFormatter.formatFromDigits('').length,
       ),
@@ -307,24 +309,30 @@ class _CurrencyInputFormatter extends TextInputFormatter {
 
   // Converte uma string de dígitos puros para o formato "R$ X.XXX,XX"
   static String formatFromDigits(String digits) {
-    final onlyDigits = digits.replaceAll(RegExp(r'[^0-9]'), '');
-    final padded = (onlyDigits.isEmpty ? '0' : onlyDigits).padLeft(3, '0');
+
+    final onlyDigits = digits.replaceAll(RegExp(r'[^0-9]'), ''); //remove tudo que nao for numero
+    final padded = (onlyDigits.isEmpty ? '0' : onlyDigits).padLeft(3, '0'); //Garante pelo menos 3 digitos
+
     final cents = padded.substring(padded.length - 2);       // Últimos 2 dígitos = centavos
-    final integerPart = padded.substring(0, padded.length - 2);
-    final reais = _addThousandsSeparator(integerPart);
+    final integerPart = padded.substring(0, padded.length - 2); //pega tudo antes dos centavos
+    final reais = _addThousandsSeparator(integerPart); // adiciona separdor de milhar
     return 'R\$ $reais,$cents';
   }
 
   // Adiciona separador de milhar com ponto: "1234" → "1.234"
   static String _addThousandsSeparator(String digits) {
-    final trimmed = digits.replaceFirst(RegExp(r'^0+(?=\d)'), '');
-    final normalized = trimmed.isEmpty ? '0' : trimmed;
-    final buffer = StringBuffer();
+
+    final trimmed = digits.replaceFirst(RegExp(r'^0+(?=\d)'), ''); //Remove 0 a esquerda
+    final normalized = trimmed.isEmpty ? '0' : trimmed; 
+    final buffer = StringBuffer(); //Monta a string por partes
 
     for (var i = 0; i < normalized.length; i++) {
-      final reverseIndex = normalized.length - i;
+
+      final reverseIndex = normalized.length - i; //Conta a posição da direita para a querda
+
       buffer.write(normalized[i]);
-      if (reverseIndex > 1 && reverseIndex % 3 == 1) {
+
+      if (reverseIndex > 1 && reverseIndex % 3 == 1) { //Coloca . a cada 3 digitos
         buffer.write('.');
       }
     }
