@@ -2,6 +2,13 @@ import * as admin from "firebase-admin";
 import * as functions from "firebase-functions/v1";
 import { enforceRateLimit } from "./rate_limit";
 
+// Este módulo é carregado via `export * from "./balcao"` no index, possivelmente
+// antes do initializeApp() do index executar. O guard garante o Admin SDK
+// inicializado antes do admin.firestore() abaixo, sem inicializar duas vezes.
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
+
 const db = admin.firestore();
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -80,10 +87,6 @@ type CancelarOrdemPayload = {
   startup_id?: unknown;
   order_id?: unknown;
 };
-
-type GetOrderbookPayload = { startup_id?: unknown };
-
-type GetTradesPayload = { startup_id?: unknown; limit?: unknown; after?: unknown };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -956,145 +959,6 @@ export const ordersCancel = functions
     );
 
     return { success: true };
-  });
-
-export const getOrderbook = functions
-  .region("southamerica-east1")
-  .https.onCall(async (data: GetOrderbookPayload, _context) => {
-    const startupId = requireString(data.startup_id, "startup_id");
-
-    const startupSnap = await db.collection("startups").doc(startupId).get();
-    if (!startupSnap.exists) throwHttp("not-found", "Startup não encontrada.");
-
-    const [openOrdersSnap, config, state] = await Promise.all([
-      startupOrdersRef(startupId)
-        .where("status", "in", ["aberta", "parcialmente_executada"])
-        .get(),
-      readConfig(startupId),
-      readState(startupId),
-    ]);
-
-    const orders = openOrdersSnap.docs.map(d => ({ id: d.id, ...d.data() } as Order));
-    const buyOrders = orders
-      .filter(o => o.side === "buy")
-      .sort((a, b) => b.price - a.price)
-      .slice(0, 20);
-    const sellOrders = orders
-      .filter(o => o.side === "sell")
-      .sort((a, b) => a.price - b.price)
-      .slice(0, 20);
-
-    return {
-      success: true,
-      buy_orders: buyOrders,
-      sell_orders: sellOrders,
-      last_price: state.last_price,
-      preco_emissao: config.preco_emissao,
-      best_bid: state.best_bid,
-      best_ask: state.best_ask,
-      spread: state.spread,
-      tokens_vendidos_startup: state.tokens_vendidos_startup,
-      tokens_emitidos: config.tokens_emitidos,
-    };
-  });
-
-export const getTrades = functions
-  .region("southamerica-east1")
-  .https.onCall(async (data: GetTradesPayload, _context) => {
-    const startupId = requireString(data.startup_id, "startup_id");
-    const limitVal = typeof data.limit === "number" ? Math.min(Math.max(data.limit, 1), 50) : 20;
-
-    let query = startupTradesRef(startupId)
-      .orderBy("executed_at", "desc")
-      .limit(limitVal);
-
-    if (typeof data.after === "string" && data.after) {
-      const afterSnap = await startupTradesRef(startupId).doc(data.after).get();
-      if (afterSnap.exists) {
-        query = query.startAfter(afterSnap);
-      }
-    }
-
-    const snap = await query.get();
-    return {
-      success: true,
-      trades: snap.docs.map(d => ({ id: d.id, ...d.data() })),
-    };
-  });
-
-// ─── Admin: cria a ordem inicial de venda da startup (book primário) ──────────
-
-export const inicializarOrdemEmissao = functions
-  .region("southamerica-east1")
-  .https.onCall(async (data: { startup_id?: unknown }, context) => {
-    const uid = context.auth?.uid;
-    if (!uid) throwHttp("unauthenticated", "Usuário não autenticado.");
-
-    const adminSnap = await db.collection("usuarios").doc(uid).get();
-    if (!adminSnap.exists || adminSnap.data()?.isAdmin !== true) {
-      throwHttp("permission-denied", "Apenas admin pode inicializar ordem de emissão.");
-    }
-
-    const startupId = requireString(data.startup_id, "startup_id");
-
-    const startupSnap = await db.collection("startups").doc(startupId).get();
-    if (!startupSnap.exists) throwHttp("not-found", "Startup não encontrada.");
-
-    const config = await readConfig(startupId);
-    if (config.tokens_emitidos <= 0 || config.preco_emissao <= 0) {
-      throwHttp("failed-precondition", "Config inválida: tokens_emitidos/preco_emissao precisam ser positivos.");
-    }
-
-    // Idempotent: se já existe ordem aberta de startup, não duplica.
-    const existing = await startupOrdersRef(startupId)
-      .where("seller_type", "==", "startup")
-      .where("status", "in", ["aberta", "parcialmente_executada"])
-      .limit(1)
-      .get();
-
-    if (!existing.empty) {
-      return { success: false, reason: "ALREADY_EXISTS", order_id: existing.docs[0].id };
-    }
-
-    const now = admin.firestore.Timestamp.now();
-    const orderRef = startupOrdersRef(startupId).doc();
-
-    await orderRef.set({
-      user_id: startupId,
-      seller_type: "startup",
-      side: "sell",
-      order_type: "limit",
-      status: "aberta",
-      price: config.preco_emissao,
-      qty_original: config.tokens_emitidos,
-      qty_executada: 0,
-      qty_restante: config.tokens_emitidos,
-      version: 1,
-      created_at: now,
-      updated_at: now,
-    });
-
-    // Inicializa balcao/state se ainda não existir (best_ask = preço de emissão).
-    const stateRef = startupBalcaoRef(startupId).doc("state");
-    const stateSnap = await stateRef.get();
-    if (!stateSnap.exists) {
-      await stateRef.set({
-        last_price: null,
-        tokens_vendidos_startup: 0,
-        tokens_disponiveis_startup: config.tokens_emitidos,
-        best_bid: null,
-        best_ask: config.preco_emissao,
-        spread: null,
-        total_trades: 0,
-        updated_at: now,
-      });
-    } else {
-      updateBestPrices(startupId).catch((e) =>
-      functions.logger.error("updateBestPrices failed", { startupId, error: String(e) })
-    );
-    }
-
-    return { success: true, order_id: orderRef.id };
   });
 
 // ─── Internal: update best_bid / best_ask after order changes ─────────────────
